@@ -249,14 +249,33 @@ export class HttpkomConnection {
         return;
       }
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw { status: response.status, data: errorData };
+      // Optionally check if there's no content at all
+      if (response.status === 204 || response.headers.get('Content-Length') === '0') {
+        // Clear pending request if necessary and return an appropriate object
+        this.#removePendingRequest(controller);
+        return { data: null, status: response.status, headers: response.headers };
       }
 
-      const data = await response.json();
+      // Check if response content is JSON based on the Content-Type header
+      const contentType = response.headers.get('Content-Type');
+
+      // Parse the response accordingly
+      let payload;
+      if (contentType && contentType.indexOf('application/json') !== -1) {
+        payload = await response.json();
+      } else {
+        // For non-JSON responses, you could read as text or handle appropriately
+        payload = await response.text();
+      }
+
+      if (!response.ok) {
+        throw { status: response.status, data: payload };
+      }
+
+      // Remove the pending request before returning
       this.#removePendingRequest(controller);
-      return { data, status: response.status, headers: response.headers };
+
+      return { data: payload, status: response.status, headers: response.headers };
     } catch (error) {
       if (!this.#hasPendingRequest(controller)) {
         return;

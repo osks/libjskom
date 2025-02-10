@@ -26,8 +26,16 @@ export class HttpkomClient {
     id,
     httpkomId,
     session,
+
+    httpkomServer,
   } = {}) {
-    this.conn = new HttpkomConnection({server_id, id, httpkomId, session});
+    this.conn = new HttpkomConnection({
+      server_id,
+      id,
+      httpkomId,
+      session,
+      httpkomServer,
+    });
 
     this.memberships = new Memberships(this.conn);
     this.#membershipListHandler = new MembershipListHandler(

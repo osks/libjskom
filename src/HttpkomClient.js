@@ -3,6 +3,7 @@ import { MembershipList } from './MembershipList.js';
 import { MembershipListHandler } from './MembershipListHandler.js';
 import { Memberships } from './Memberships.js';
 import { Sessions } from './Sessions.js';
+import { Persons } from './Persons.js';
 
 
 export class HttpkomClient {
@@ -20,18 +21,17 @@ export class HttpkomClient {
   #userActivePromise = null;
 
   constructor({
-    server_id,
-
     // For restoring a connection from localStorage:
     id,
+    lyskomServerId,
     httpkomId,
     session,
 
     httpkomServer,
   } = {}) {
     this.conn = new HttpkomConnection({
-      server_id,
       id,
+      lyskomServerId,
       httpkomId,
       session,
       httpkomServer,
@@ -41,6 +41,7 @@ export class HttpkomClient {
     this.#membershipListHandler = new MembershipListHandler(
       this.conn, this.memberships, new MembershipList());
     this.sessions = new Sessions(this.conn);
+    this.persons = new Persons(this.conn);
 
     //this.textsCache = this._jskomCacheFactory(this.id + '-texts', { capacity: 100 });
     //this.marksCache = this._jskomCacheFactory(this.id + '-marks', { capacity: 100 });

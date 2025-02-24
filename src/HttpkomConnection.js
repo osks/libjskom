@@ -11,10 +11,10 @@ let newId = function() {
 };
 
 export class HttpkomConnection {
-  server_id; // httpkom's lyskom server_id
   id; // our own unique (per-browser) instance identifer
+  lyskomServerId; // httpkom's lyskom lyskomServerId
   httpkomId = null; // httpkom connection id
-  session = null; // lyskom session
+  session = null; // lyskom session object
 
   httpkomServer = "/httpkom"; // httpkom url prefix
   httpkomConnectionHeader = "Httpkom-Connection";
@@ -27,8 +27,8 @@ export class HttpkomConnection {
   #createSessionPromise = null; // Promise used for creating a session.
 
   constructor({
-    server_id,
     id = null,
+    lyskomServerId,
     httpkomId,
     session,
 
@@ -40,8 +40,8 @@ export class HttpkomConnection {
     cacheVersion,
     cacheVersionKey,
   } = {}) {
-    this.server_id = server_id;
     this.id = id ?? newId();
+    this.lyskomServerId = lyskomServerId;
     this.httpkomId = httpkomId;
     this.session = session;
 
@@ -56,16 +56,16 @@ export class HttpkomConnection {
   // For saving connection to localStorage.
   toObject() {
     return {
-      server_id: this.server_id,
       id: this.id,
+      lyskomServerId: this.lyskomServerId,
       httpkomId: this.httpkomId,
       session: this.session,
     };
   }
 
   // For instantiating based on connection saved to localStorage.
-  static fromObject({server_id, id, httpkomId, session}) {
-    return new HttpkomConnection({server_id, id, httpkomId, session});
+  static fromObject({id, lyskomServerId, httpkomId, session}) {
+    return new HttpkomConnection({id, lyskomServerId, httpkomId, session});
   }
 
   isConnected() {
@@ -77,8 +77,15 @@ export class HttpkomConnection {
     return Boolean(this.isConnected() && this.session.person);
   }
 
-  async connect() {
-    // TODO: Perhaps we should fail if already connected?
+  async connect(lyskomServerId = null) {
+    // Fail if already connected
+    if (this.isConnected()) {
+      throw new Error("Already connected");
+    }
+
+    if (lyskomServerId != null) {
+      this.lyskomServerId = lyskomServerId;
+    }
 
     const request = {
       method: 'post',
@@ -160,7 +167,7 @@ export class HttpkomConnection {
    * Optionally add the httpkomId as a query parameter.
    */
   urlFor(path, addHttpkomIdQueryParameter) {
-    let url = `${this.httpkomServer}/${this.server_id}${path}`;
+    let url = `${this.httpkomServer}/${this.lyskomServerId}${path}`;
     if (addHttpkomIdQueryParameter) {
       const kv = `${encodeURIComponent(this.httpkomConnectionHeader)}=${encodeURIComponent(this.httpkomId)}`;
       url += (url.indexOf('?') === -1 ? '?' : '&') + kv;
@@ -210,6 +217,20 @@ export class HttpkomConnection {
       // Otherwise, propagate the error.
       throw error;
     }
+  }
+
+  websocket() {
+    // this.httpkomServer can contain protocol (https://) if doing
+    // crossdomain requests for httpkom.
+    function convertToWebSocketUrl(url) {
+      return url.replace(/^(?:https?:\/\/)?/, 'ws://');
+    }
+    let wsUrl = convertToWebSocketUrl(`${this.httpkomServer}/ws`);
+    const kv = `${encodeURIComponent(this.httpkomConnectionHeader)}=${encodeURIComponent(this.httpkomId)}`;
+    wsUrl += (wsUrl.indexOf('?') === -1 ? '?' : '&') + kv;
+    console.log(`Creating websocket to url: ${wsUrl}`);
+    const ws = new WebSocket(wsUrl);
+    return ws;
   }
 
   async #request(config, requireSession, requireLogin) {

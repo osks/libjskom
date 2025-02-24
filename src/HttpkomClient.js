@@ -1,17 +1,26 @@
 import { HttpkomConnection } from './HttpkomConnection.js';
 import { MembershipList } from './MembershipList.js';
 import { MembershipListHandler } from './MembershipListHandler.js';
-import { Memberships } from './Memberships.js';
-import { Sessions } from './Sessions.js';
-import { Persons } from './Persons.js';
+
+import { MembershipsMixin } from './Memberships.js';
+import { SessionsMixin } from './Sessions.js';
+import { PersonsMixin } from './Persons.js';
+
+// Create a helper to mix in methods to the target prototype.
+function mixin(target, source) {
+  Object.getOwnPropertyNames(source.prototype).forEach(name => {
+    if (name !== 'constructor') {
+      target.prototype[name] = source.prototype[name];
+    }
+  });
+}
 
 
-export class HttpkomClient {
+class HttpkomClient {
   conn;
 
   currentConferenceNo = 0; // The conference number for the current working conference.
   memberships;
-  sessions;
 
   #membershipListHandler;
 
@@ -37,11 +46,8 @@ export class HttpkomClient {
       httpkomServer,
     });
 
-    this.memberships = new Memberships(this.conn);
     this.#membershipListHandler = new MembershipListHandler(
       this.conn, this.memberships, new MembershipList());
-    this.sessions = new Sessions(this.conn);
-    this.persons = new Persons(this.conn);
 
     //this.textsCache = this._jskomCacheFactory(this.id + '-texts', { capacity: 100 });
     //this.marksCache = this._jskomCacheFactory(this.id + '-marks', { capacity: 100 });
@@ -120,3 +126,9 @@ export class HttpkomClient {
   }*/
 
 }
+
+mixin(HttpkomClient, MembershipsMixin);
+mixin(HttpkomClient, PersonsMixin);
+mixin(HttpkomClient, SessionsMixin);
+
+export { HttpkomClient };

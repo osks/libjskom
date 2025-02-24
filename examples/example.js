@@ -8,7 +8,7 @@ messagesElement.messages = messages;
 
 const sleepMs = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-async function run() {
+async function run1() {
   console.log("hello");
 
   //let conn = new HttpkomConnection({
@@ -60,4 +60,47 @@ async function wstest(conn) {
   }
 }
 
-run();
+
+async function run2() {
+  console.log("hello");
+
+  let conn = new HttpkomConnection({
+    server_id: "localhost",
+    httpkomServer: "http://127.0.0.1:5000/httpkom",
+  });
+
+  await conn.connect();
+
+
+  let client = new HttpkomClient({
+    server_id: "localhost",
+    httpkomServer: "http://127.0.0.1:5000/httpkom",
+  });
+
+  await client.conn.connect();
+
+  try {
+    let respCreateP = await client.createPerson("oskar1", "oskar1");
+    console.log(respCreateP);
+  } catch (error) {
+    console.log("error:");
+    console.log(error);
+    if (error.data.error_msg == "PersonExists") {
+      // this is ok
+    } else {
+      throw error;
+    }
+  }
+
+
+  let respLogin = await client.login(6, "oskar1");
+  console.log(respLogin);
+
+  await client.logout();
+  await client.conn.disconnect();
+
+  console.log("world");
+
+}
+
+run1();

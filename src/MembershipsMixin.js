@@ -1,10 +1,4 @@
-export class Memberships {
-  conn;
-
-  constructor(conn) {
-    this.conn = conn;
-  }
-
+export class MembershipsMixin {
   async setNumberOfUnreadTexts(confNo, noOfUnread) {
     const data = { no_of_unread: parseInt(noOfUnread, 10) };
     try {

@@ -60,7 +60,7 @@ class AppState {
         });
         const clientId = crypto.randomUUID();
 
-        await client.conn.connect();
+        await client.connect();
         this.clients.set(clientId, client);
         this.activeClientId = clientId;
         this.notify();
@@ -72,7 +72,7 @@ class AppState {
         const client = this.clients.get(clientId);
         if (!client) throw new Error('Invalid client ID');
 
-        await client.sessions.login({name: username, passwd: password});
+        await client.login({name: username, passwd: password});
         this.currentScreen = 'messages';
         this.notify();
     }
@@ -81,7 +81,7 @@ class AppState {
         const client = this.clients.get(clientId);
         if (!client) throw new Error('Invalid client ID');
 
-        await client.persons.createPerson(username, password);
+        await client.createPerson(username, password);
         this.currentScreen = 'login';
         this.notify();
     }

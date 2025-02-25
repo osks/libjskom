@@ -5,7 +5,7 @@ export class PersonsMixin {
       passwd: passwd
     };
 
-    const response = await this.conn.http({
+    const response = await this.http({
       method: 'post',
       url: '/persons/',
       data
@@ -15,7 +15,7 @@ export class PersonsMixin {
   }
 
   async setPresentation(persNo, textNo) {
-    return this.conn.http({
+    return this.http({
       method: 'post',
       url: `/persons/${persNo}/set-presentation`,
       data: { text_no: textNo }
@@ -23,7 +23,7 @@ export class PersonsMixin {
   }
 
   async setPassword(persNo, oldPwd, newPwd) {
-    return this.conn.http({
+    return this.http({
       method: 'post',
       url: `/persons/${persNo}/set-passwd`,
       data: {

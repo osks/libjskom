@@ -2,9 +2,9 @@ import { HttpkomConnection } from './HttpkomConnection.js';
 import { MembershipList } from './MembershipList.js';
 import { MembershipListHandler } from './MembershipListHandler.js';
 
-import { MembershipsMixin } from './Memberships.js';
-import { SessionsMixin } from './Sessions.js';
-import { PersonsMixin } from './Persons.js';
+import { MembershipsMixin } from './MembershipsMixin.js';
+import { SessionsMixin } from './SessionsMixin.js';
+import { PersonsMixin } from './PersonsMixin.js';
 
 // Create a helper to mix in methods to the target prototype.
 function mixin(target, source) {
@@ -16,9 +16,7 @@ function mixin(target, source) {
 }
 
 
-class HttpkomClient {
-  conn;
-
+class HttpkomClient extends HttpkomConnection{
   currentConferenceNo = 0; // The conference number for the current working conference.
   memberships;
 
@@ -36,23 +34,48 @@ class HttpkomClient {
     httpkomId,
     session,
 
+    // Settings
     httpkomServer,
+    httpkomConnectionHeader,
+    clientName,
+    clientVersion,
+    cacheVersion,
+    cacheVersionKey,
   } = {}) {
-    this.conn = new HttpkomConnection({
+    super({
       id,
       lyskomServerId,
       httpkomId,
       session,
       httpkomServer,
+      httpkomConnectionHeader,
+      clientName,
+      clientVersion,
+      cacheVersion,
+      cacheVersionKey,
     });
 
     this.#membershipListHandler = new MembershipListHandler(
-      this.conn, this.memberships, new MembershipList());
+      this, this.memberships, new MembershipList());
 
     //this.textsCache = this._jskomCacheFactory(this.id + '-texts', { capacity: 100 });
     //this.marksCache = this._jskomCacheFactory(this.id + '-marks', { capacity: 100 });
-
   }
+
+  async getLyskomServers() {
+    let url = `${this.httpkomServer}/`;
+    if (this.cacheVersion != null) {
+      const kv = `${encodeURIComponent(this.cacheVersionKey)}=${encodeURIComponent(this.cacheVersion)}`;
+      url += (url.indexOf('?') === -1 ? '?' : '&') + kv;
+    }
+    const fetchConfig = {
+      method: 'GET',
+      mode: 'cors',
+    };
+    const response = await fetch(url, fetchConfig);
+    return await response.json();
+  }
+
 
   async getMembershipList() {
     return await this.#membershipListHandler.getMembershipList();
@@ -60,8 +83,8 @@ class HttpkomClient {
 
 
   getPersNo() {
-    if (this.conn.isLoggedIn()) {
-      return this.conn.session.person.pers_no;
+    if (this.isLoggedIn()) {
+      return this.session.person.pers_no;
     } else {
       return null;
     }
@@ -99,7 +122,7 @@ class HttpkomClient {
     const previousConfNo = this.currentConferenceNo;
     this.currentConferenceNo = confNo; // update pre-request
     try {
-      await this.conn.http(request, true, true);
+      await this.http(request, true, true);
       console.log(`HttpkomClient - changeConference(${confNo})`);
       // Changing conference triggers the lyskom server to update the last-time-read for the previous conference.
       this.currentConferenceNo = confNo; // ensure the correct conf is stored
@@ -115,7 +138,7 @@ class HttpkomClient {
 
   /*
   clearAllCaches() {
-    console.log("HttpkomClient - connection(id: " + this.conn.id + ") - clearing all caches");
+    console.log("HttpkomClient - connection(id: " + this.id + ") - clearing all caches");
     this.textsCache.removeAll();
     this.marksCache.removeAll();
   }

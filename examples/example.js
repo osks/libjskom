@@ -22,12 +22,15 @@ async function run1() {
     httpkomServer: "http://127.0.0.1:5000/httpkom",
   });
 
-  await client.conn.connect();
+  const lyskomServers = await client.getLyskomServers();
+  console.log("Available lyskom servers: ", lyskomServers);
+
+  await client.connect();
 
   console.log("world");
 
 
-  wstest(client.conn);
+  wstest(client);
 }
 
 async function wstest(conn) {
@@ -77,7 +80,7 @@ async function run2() {
     httpkomServer: "http://127.0.0.1:5000/httpkom",
   });
 
-  await client.conn.connect();
+  await client.connect();
 
   try {
     let respCreateP = await client.createPerson("oskar1", "oskar1");
@@ -97,7 +100,7 @@ async function run2() {
   console.log(respLogin);
 
   await client.logout();
-  await client.conn.disconnect();
+  await client.disconnect();
 
   console.log("world");
 

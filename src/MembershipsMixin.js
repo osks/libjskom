@@ -2,7 +2,7 @@ export class MembershipsMixin {
   async setNumberOfUnreadTexts(confNo, noOfUnread) {
     const data = { no_of_unread: parseInt(noOfUnread, 10) };
     try {
-      await this.conn.http(
+      await this.http(
         {
           method: 'post',
           url: `/persons/current/memberships/${confNo}/unread`,
@@ -11,21 +11,21 @@ export class MembershipsMixin {
         true,
         true
       );
-      this.conn.broadcast('jskom:membership:changed', confNo);
-      this.conn.broadcast('jskom:membershipUnread:changed', confNo);
+      this.broadcast('jskom:membership:changed', confNo);
+      this.broadcast('jskom:membershipUnread:changed', confNo);
     } catch (error) {
       throw error;
     }
   }
 
   async addMembership(confNo) {
-    return this.addMembershipForPerson(this.conn.getPersNo(), confNo);
+    return this.addMembershipForPerson(this.getPersNo(), confNo);
   }
 
   async addMembershipForPerson(persNo, confNo) {
     const data = { priority: 100 };
     try {
-      await this.conn.http(
+      await this.http(
         {
           method: 'put',
           url: `/persons/${persNo}/memberships/${confNo}`,
@@ -35,8 +35,8 @@ export class MembershipsMixin {
         true
       );
       // Only broadcast changes if for the current person.
-      if (this.conn.getPersNo() === persNo) {
-        this.conn.broadcast('jskom:membership:created', confNo);
+      if (this.getPersNo() === persNo) {
+        this.broadcast('jskom:membership:created', confNo);
       }
     } catch (error) {
       throw error;
@@ -44,12 +44,12 @@ export class MembershipsMixin {
   }
 
   async deleteMembership(confNo) {
-    return this.deleteMembershipForPerson(this.conn.getPersNo(), confNo);
+    return this.deleteMembershipForPerson(this.getPersNo(), confNo);
   }
 
   async deleteMembershipForPerson(persNo, confNo) {
     try {
-      await this.conn.http(
+      await this.http(
         {
           method: 'delete',
           url: `/persons/${persNo}/memberships/${confNo}`
@@ -57,8 +57,8 @@ export class MembershipsMixin {
         true,
         true
       );
-      if (this.conn.getPersNo() === persNo) {
-        this.conn.broadcast('jskom:membership:deleted', confNo);
+      if (this.getPersNo() === persNo) {
+        this.broadcast('jskom:membership:deleted', confNo);
       }
     } catch (error) {
       throw error;
@@ -66,12 +66,12 @@ export class MembershipsMixin {
   }
 
   async getMembership(confNo) {
-    return this.getMembershipForPerson(this.conn.getPersNo(), confNo);
+    return this.getMembershipForPerson(this.getPersNo(), confNo);
   }
 
   async getMembershipForPerson(persNo, confNo) {
     try {
-      const response = await this.conn.http(
+      const response = await this.http(
         {
           method: 'get',
           url: `/persons/${persNo}/memberships/${confNo}`
@@ -88,7 +88,7 @@ export class MembershipsMixin {
   }
 
   async getMemberships(options) {
-    return this.getMembershipsForPerson(this.conn.getPersNo(), options);
+    return this.getMembershipsForPerson(this.getPersNo(), options);
   }
 
   async getMembershipsForPerson(persNo, options = { unread: false }) {
@@ -102,7 +102,7 @@ export class MembershipsMixin {
     }
     const logPrefix = `memberships - getMembershipsForPerson(${persNo}, ${JSON.stringify(options)}) - `;
     try {
-      const response = await this.conn.http(
+      const response = await this.http(
         {
           method: 'get',
           url: `/persons/${persNo}/memberships/`,
@@ -120,13 +120,13 @@ export class MembershipsMixin {
   }
 
   async getMembershipUnread(confNo) {
-    return this.getMembershipUnreadForPerson(this.conn.getPersNo(), confNo);
+    return this.getMembershipUnreadForPerson(this.getPersNo(), confNo);
   }
 
   async getMembershipUnreadForPerson(persNo, confNo) {
     const logPrefix = `memberships - getMembershipUnreadForPerson(${persNo}, ${confNo}) - `;
     try {
-      const response = await this.conn.http(
+      const response = await this.http(
         {
           method: 'get',
           url: `/persons/${persNo}/memberships/${confNo}/unread`
@@ -143,13 +143,13 @@ export class MembershipsMixin {
   }
 
   async getMembershipUnreads(conn) {
-    return this.getMembershipUnreadsForPerson(this.conn.getPersNo());
+    return this.getMembershipUnreadsForPerson(this.getPersNo());
   }
 
   async getMembershipUnreadsForPerson(persNo) {
     const logPrefix = `memberships - getMembershipUnreadsForPerson(${persNo}) - `;
     try {
-      const response = await this.conn.http(
+      const response = await this.http(
         {
           method: 'get',
           url: `/persons/${persNo}/memberships/unread/`

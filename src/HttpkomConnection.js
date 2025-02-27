@@ -225,7 +225,7 @@ export class HttpkomConnection {
     function convertToWebSocketUrl(url) {
       return url.replace(/^(?:https?:\/\/)?/, 'ws://');
     }
-    let wsUrl = convertToWebSocketUrl(`${this.httpkomServer}/ws`);
+    let wsUrl = convertToWebSocketUrl(`${this.httpkomServer}/websocket`);
     const kv = `${encodeURIComponent(this.httpkomConnectionHeader)}=${encodeURIComponent(this.httpkomId)}`;
     wsUrl += (wsUrl.indexOf('?') === -1 ? '?' : '&') + kv;
     console.log(`Creating websocket to url: ${wsUrl}`);

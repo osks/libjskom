@@ -62,7 +62,7 @@ class HttpkomClient extends HttpkomConnection{
     //this.marksCache = this._jskomCacheFactory(this.id + '-marks', { capacity: 100 });
   }
 
-  async getLyskomServers() {
+  static async getLyskomServers() {
     let url = `${this.httpkomServer}/`;
     if (this.cacheVersion != null) {
       const kv = `${encodeURIComponent(this.cacheVersionKey)}=${encodeURIComponent(this.cacheVersion)}`;

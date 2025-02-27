@@ -42,13 +42,19 @@ class KomRequesterElement extends LitElement {
   render() {
     return html`
       <label>Request</label>
-      <input id="request" type="text" value="${this.request}"/>
-      <button id="send" type="button" @click=${this.sendClicked}>Send</button>
+      <input id="request" type="text" @input=${this.changeRequest} value="${this.request}"/>
+      <button id="send" type="button" @click=${this.clickSend}>Send</button>
     `;
   }
 
-  sendClicked = (event) => {
-    console.log("send clicked");
+  changeRequest(event) {
+    console.log("changeRequest");
+    const input = event.target;
+    this.request = input.value;
+  }
+
+  clickSend = (event) => {
+    console.log("clickSend");
     if (this.sendRequestFunc) {
       this.sendRequestFunc(this.request);
     }

@@ -62,18 +62,10 @@ class HttpkomClient extends HttpkomConnection{
     //this.marksCache = this._jskomCacheFactory(this.id + '-marks', { capacity: 100 });
   }
 
-  static async getLyskomServers() {
-    let url = `${this.httpkomServer}/`;
-    if (this.cacheVersion != null) {
-      const kv = `${encodeURIComponent(this.cacheVersionKey)}=${encodeURIComponent(this.cacheVersion)}`;
-      url += (url.indexOf('?') === -1 ? '?' : '&') + kv;
-    }
-    const fetchConfig = {
-      method: 'GET',
-      mode: 'cors',
-    };
-    const response = await fetch(url, fetchConfig);
-    return await response.json();
+
+  // For instantiating based on connection saved to localStorage.
+  static fromObject({id, lyskomServerId, httpkomId, session}) {
+    return new HttpkomClient({id, lyskomServerId, httpkomId, session});
   }
 
 

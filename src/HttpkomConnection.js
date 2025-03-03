@@ -122,6 +122,21 @@ export class HttpkomConnection {
     return response.data;
   }
 
+  async getLyskomServers() {
+    let url = `${this.httpkomServer}/`;
+    if (this.cacheVersion != null) {
+      const kv = `${encodeURIComponent(this.cacheVersionKey)}=${encodeURIComponent(this.cacheVersion)}`;
+      url += (url.indexOf('?') === -1 ? '?' : '&') + kv;
+    }
+    const fetchConfig = {
+      method: 'GET',
+      mode: 'cors',
+    };
+    const response = await fetch(url, fetchConfig);
+    return await response.json();
+  }
+
+
   /**
    * Create an internal broadcast name by combining eventName with the connection id.
    */

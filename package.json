@@ -1,0 +1,9 @@
+{
+  "name": "libjskom",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test:e2e": "bash test/e2e/run.sh"
+  }
+}

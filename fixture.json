@@ -1,0 +1,41 @@
+{
+  "persons": [
+    { "name": "Test User", "passwd": "test123" },
+    { "name": "Another User", "passwd": "test456" }
+  ],
+  "login": { "pers_name": "Test User", "passwd": "test123" },
+  "conferences": [
+    { "name": "Test Conference" },
+    { "name": "General Discussion" }
+  ],
+  "memberships": [
+    { "pers_name": "Test User", "conf_name": "Test Conference" },
+    { "pers_name": "Test User", "conf_name": "General Discussion" },
+    { "pers_name": "Another User", "conf_name": "Test Conference" },
+    { "pers_name": "Another User", "conf_name": "General Discussion" }
+  ],
+  "texts": [
+    {
+      "author": "Test User",
+      "subject": "Welcome",
+      "body": "Welcome to the test conference!",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Test Conference" }}]
+    },
+    {
+      "author": "Another User",
+      "subject": "Thanks",
+      "body": "Thanks for the welcome!",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Test Conference" }}],
+      "comment_to_list": [{ "type": "comment", "subject": "Welcome" }]
+    },
+    {
+      "author": "Test User",
+      "subject": "Hello everyone",
+      "body": "General discussion starts here.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "General Discussion" }}]
+    }
+  ]
+}

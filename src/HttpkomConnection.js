@@ -204,6 +204,16 @@ export class HttpkomConnection {
   async http(config, requireSession = false, requireLogin = false) {
     // Prefix URL with the httpkom server and server id
     config.url = this.urlFor(config.url, false);
+    // Append query parameters from config.params
+    if (config.params) {
+      const defined = Object.fromEntries(
+        Object.entries(config.params).filter(([, v]) => v !== undefined)
+      );
+      if (Object.keys(defined).length > 0) {
+        const sep = config.url.indexOf('?') === -1 ? '?' : '&';
+        config.url += sep + new URLSearchParams(defined);
+      }
+    }
     // Requests that require login fail immediately if not logged in.
     if (requireLogin && !this.isLoggedIn()) {
       console.log("HttpkomConnection - http() - failing request that requires login");

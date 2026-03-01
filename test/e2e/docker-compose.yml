@@ -3,8 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.lyskom-server
-    ports:
-      - "4894:4894"
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "4894"]
       interval: 2s

@@ -1,0 +1,8 @@
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir 'httpkom>=0.32'
+
+COPY seed.py /seed.py
+COPY fixture.json /fixture.json
+
+CMD ["python", "/seed.py", "--host", "lyskom-server", "--port", "4894", "/fixture.json"]

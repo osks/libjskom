@@ -10,6 +10,39 @@ let newId = function() {
   return "conn-" + (Math.floor(Math.random() * (max - min + 1)) + min);
 };
 
+/**
+ * @typedef {Object} Session
+ * @property {number} session_no
+ * @property {?Person} person
+ */
+
+/**
+ * @typedef {Object} Person
+ * @property {number} pers_no
+ * @property {string} pers_name
+ */
+
+/**
+ * @typedef {Object} ConnectionEvent
+ * @property {string} name - The event name.
+ * @property {HttpkomConnection} connection - The connection that emitted the event.
+ * @property {Array} args - Additional event arguments.
+ */
+
+/**
+ * @typedef {Object} HttpkomConnectionOptions
+ * @property {?string} [id] - Unique instance identifier. Auto-generated if omitted.
+ * @property {string} [lyskomServerId] - httpkom server ID (e.g. "default").
+ * @property {?string} [httpkomId] - httpkom connection ID (for restoring sessions).
+ * @property {?Session} [session] - Session object (for restoring sessions).
+ * @property {string} [httpkomServer="/httpkom"] - httpkom URL prefix.
+ * @property {string} [httpkomConnectionHeader="Httpkom-Connection"] - Header name for connection ID.
+ * @property {string} [clientName="libjskom"] - Client name sent on connect.
+ * @property {string} [clientVersion="0.1"] - Client version sent on connect.
+ * @property {?number} [cacheVersion=0] - Version number appended to URLs for cache busting.
+ * @property {string} [cacheVersionKey="_v"] - Query parameter name for cache version.
+ */
+
 export class HttpkomConnection {
   id; // our own unique (per-browser) instance identifer
   lyskomServerId; // httpkom's lyskom lyskomServerId
@@ -26,6 +59,7 @@ export class HttpkomConnection {
   #pendingRequests = new Set();
   #createSessionPromise = null; // Promise used for creating a session.
 
+  /** @param {HttpkomConnectionOptions} [options] */
   constructor({
     id = null,
     lyskomServerId,
@@ -53,7 +87,10 @@ export class HttpkomConnection {
     this.cacheVersionKey = cacheVersionKey ?? this.cacheVersionKey;
   }
 
-  // For saving connection to localStorage.
+  /**
+   * Serialize connection state for storage (e.g. localStorage).
+   * @returns {{ id: string, lyskomServerId: string, httpkomId: ?string, session: ?Session }}
+   */
   toObject() {
     return {
       id: this.id,
@@ -63,20 +100,32 @@ export class HttpkomConnection {
     };
   }
 
-  // For instantiating based on connection saved to localStorage.
+  /**
+   * Restore a connection from a serialized object.
+   * @param {{ id: string, lyskomServerId: string, httpkomId: ?string, session: ?Session }} obj
+   * @returns {HttpkomConnection}
+   */
   static fromObject({id, lyskomServerId, httpkomId, session}) {
     return new HttpkomConnection({id, lyskomServerId, httpkomId, session});
   }
 
+  /** @returns {boolean} Whether there is an active httpkom session. */
   isConnected() {
     return Boolean(this.httpkomId && this.session);
   }
 
+  /** @returns {boolean} Whether the session has a logged-in person. */
   isLoggedIn() {
     // Ensure we explicitly return a boolean.
     return Boolean(this.isConnected() && this.session.person);
   }
 
+  /**
+   * Create a new session on the LysKOM server via httpkom.
+   * @param {?string} [lyskomServerId] - Server ID to connect to. Uses the configured one if omitted.
+   * @returns {Promise<Session>} The created session.
+   * @throws {Error} If already connected.
+   */
   async connect(lyskomServerId = null) {
     // Fail if already connected
     if (this.isConnected()) {
@@ -105,6 +154,11 @@ export class HttpkomConnection {
     return session;
   }
 
+  /**
+   * Destroy a session.
+   * @param {number} [sessionNo=0] - Session number to delete. 0 means the current session.
+   * @returns {Promise<*>}
+   */
   async disconnect(sessionNo = 0) {
     const response = await this.http(
       { method: 'delete', url: `/sessions/${sessionNo}` },
@@ -122,6 +176,11 @@ export class HttpkomConnection {
     return response.data;
   }
 
+  /**
+   * Fetch the list of available LysKOM servers from httpkom.
+   * Does not require a session.
+   * @returns {Promise<Object.<string, { id: string, name: string, host: string, port: number }>>}
+   */
   async getLyskomServers() {
     let url = `${this.httpkomServer}/`;
     if (this.cacheVersion != null) {
@@ -145,11 +204,9 @@ export class HttpkomConnection {
   }
 
   /**
-   * Broadcast an event.
-   *
-   * Instead of AngularJS $broadcast, we use the simple event emitter.
-   * Any attached listener will receive an event object that contains
-   * the actual event name (without our internal suffix), the connection, and any additional arguments.
+   * Emit an event to all listeners on this connection.
+   * @param {string} eventName - Event name (e.g. "jskom:session:changed").
+   * @param {...*} args - Additional arguments passed to listeners.
    */
   broadcast(eventName, ...args) {
     // The event object: overwrite the name property to the original event name.
@@ -163,8 +220,10 @@ export class HttpkomConnection {
   }
 
   /**
-   * Attach an event listener.
-   * Returns an unsubscribe function.
+   * Listen for events on this connection.
+   * @param {string} name - Event name (e.g. "jskom:session:changed").
+   * @param {function(ConnectionEvent, ...*): void} listenerFn
+   * @returns {function(): void} Unsubscribe function.
    */
   on(name, listenerFn) {
     // The stored event name includes the connection id.
@@ -244,6 +303,11 @@ export class HttpkomConnection {
     }
   }
 
+  /**
+   * Open a WebSocket connection to httpkom.
+   * Requires an active session.
+   * @returns {WebSocket}
+   */
   websocket() {
     // this.httpkomServer can contain protocol (https://) if doing
     // crossdomain requests for httpkom.

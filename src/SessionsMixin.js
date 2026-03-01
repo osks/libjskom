@@ -1,8 +1,22 @@
 export class SessionsMixin {
+  /**
+   * Send a user-active signal to the server.
+   * Requires an active session and login.
+   * @returns {Promise<void>}
+   */
   async userIsActive() {
     return this.http({ method: 'post', url: '/sessions/current/active' }, true, true);
   }
 
+  /**
+   * Log in to the current session. Provide either `persNo` or `name`.
+   * @param {Object} credentials
+   * @param {number} [credentials.persNo] - Person number to log in as.
+   * @param {string} [credentials.name] - Person name to log in as.
+   * @param {string} credentials.passwd - Password.
+   * @returns {Promise<{ pers_no: number, pers_name: string }>} The logged-in person.
+   * @throws {Error} If neither persNo nor name is provided.
+   */
   async login({ persNo, name, passwd }) {
     const data = {};
 
@@ -30,6 +44,10 @@ export class SessionsMixin {
     return response.data;
   }
 
+  /**
+   * Log out from the current session. The session remains connected.
+   * @returns {Promise<*>}
+   */
   async logout() {
     const response = await this.http(
       { method: 'post', url: '/sessions/current/logout' },

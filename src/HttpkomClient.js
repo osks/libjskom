@@ -16,8 +16,19 @@ function mixin(target, source) {
 }
 
 
+/**
+ * Full-featured LysKOM client. Extends {@link HttpkomConnection} with
+ * session management, person operations, membership handling, and
+ * conference tracking.
+ *
+ * @extends HttpkomConnection
+ * @mixes SessionsMixin
+ * @mixes PersonsMixin
+ * @mixes MembershipsMixin
+ */
 class HttpkomClient extends HttpkomConnection{
-  currentConferenceNo = 0; // The conference number for the current working conference.
+  /** @type {number} */
+  currentConferenceNo = 0;
   memberships;
 
   #membershipListHandler;
@@ -27,6 +38,7 @@ class HttpkomClient extends HttpkomConnection{
   #userActiveLastSent = null;
   #userActivePromise = null;
 
+  /** @param {HttpkomConnectionOptions} [options] */
   constructor({
     // For restoring a connection from localStorage:
     id,
@@ -63,17 +75,31 @@ class HttpkomClient extends HttpkomConnection{
   }
 
 
-  // For instantiating based on connection saved to localStorage.
+  /**
+   * Restore a client from a serialized object (e.g. from localStorage).
+   * @param {{ id: string, lyskomServerId: string, httpkomId: ?string, session: ?Session }} obj
+   * @returns {HttpkomClient}
+   */
   static fromObject({id, lyskomServerId, httpkomId, session}) {
     return new HttpkomClient({id, lyskomServerId, httpkomId, session});
   }
 
 
+  /**
+   * Get the membership list, initializing it if needed.
+   * The list is managed by the internal MembershipListHandler which
+   * auto-refreshes unread counts.
+   * @returns {Promise<MembershipList>}
+   */
   async getMembershipList() {
     return await this.#membershipListHandler.getMembershipList();
   }
 
 
+  /**
+   * Get the person number of the logged-in user.
+   * @returns {?number} Person number, or null if not logged in.
+   */
   getPersNo() {
     if (this.isLoggedIn()) {
       return this.session.person.pers_no;
@@ -83,8 +109,7 @@ class HttpkomClient extends HttpkomConnection{
   }
 
   /**
-   * Indicates that the user is active.
-   * This sends a "user-active" signal.
+   * Signal that the user is active. Throttled to at most once per 40 seconds.
    */
   userIsActive() {
     if (this.#userActiveLastSent == null ||
@@ -104,6 +129,12 @@ class HttpkomClient extends HttpkomConnection{
     }
   }
 
+  /**
+   * Change the current working conference. This updates the server's
+   * last-time-read for the previous conference.
+   * @param {number} confNo - Conference number to switch to.
+   * @returns {Promise<void>}
+   */
   async changeConference(confNo) {
     confNo = parseInt(confNo, 10);
     const request = {

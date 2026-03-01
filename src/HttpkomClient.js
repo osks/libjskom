@@ -17,7 +17,7 @@ function mixin(target, source) {
 
 
 /**
- * Full-featured LysKOM client. Extends {@link HttpkomConnection} with
+ * Full-featured LysKOM client. Extends `HttpkomConnection` with
  * session management, person operations, membership handling, and
  * conference tracking.
  *

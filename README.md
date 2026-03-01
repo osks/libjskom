@@ -4,10 +4,17 @@ A JavaScript client library for [LysKOM](https://www.lysator.liu.se/lyskom/) via
 
 Handles sessions, login/logout, person management, conference memberships, and unread tracking.
 
+## Documentation
+
+The docs are built with [MkDocs](https://www.mkdocs.org/) and [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/). API reference is auto-generated from JSDoc annotations in the source files.
+
+The docs are automatically deployed to GitHub Pages on push to main via GitHub Actions (see `.github/workflows/docs.yml`).
+
+
 ## Prerequisites
 
 - Node.js 18+
-- [uv](https://docs.astral.sh/uv/) (for docs)
+- [uv](https://docs.astral.sh/uv/) (for docs, used via `uvx`)
 - Docker (for tests)
 
 ## Development

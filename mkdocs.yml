@@ -1,0 +1,44 @@
+dev_addr: localhost:8000
+site_name: libjskom
+site_description: JavaScript client library for LysKOM via httpkom
+site_url: https://github.com/osks/libjskom
+
+repo_url: https://github.com/osks/libjskom
+repo_name: osks/libjskom
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - content.code.copy
+    - navigation.sections
+    - navigation.expand
+    - search.highlight
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - API Reference: api.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.details
+  - toc:
+      permalink: true

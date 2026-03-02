@@ -13,8 +13,11 @@ docker compose -f "$E2E_DIR/docker-compose.yml" down -v --remove-orphans 2>/dev/
 
 trap cleanup EXIT
 
+echo "Building TypeScript..."
+npm --prefix "$ROOT_DIR" run build
+
 echo "Starting docker compose..."
 docker compose -f "$E2E_DIR/docker-compose.yml" up -d --build
 
 echo "Running e2e tests..."
-node --test "$ROOT_DIR/test/e2e/"*.test.js
+node --test --test-concurrency=1 "$ROOT_DIR/test/e2e/"*.test.js

@@ -107,6 +107,7 @@ describe('memberships', () => {
     const anotherPersNo = anotherClient.getPersNo();
     await anotherClient.disconnect();
 
+
     const memberships = await client.getMembershipsForPerson(anotherPersNo);
 
     assert.ok(Array.isArray(memberships.memberships));
@@ -118,6 +119,7 @@ describe('memberships', () => {
     const anotherClient = await createLoggedInClient(ANOTHER_USER);
     const anotherPersNo = anotherClient.getPersNo();
     await anotherClient.disconnect();
+
 
     const all = await client.getMembershipsForPerson(anotherPersNo);
     const confNo = all.memberships[0].conference.conf_no;
@@ -133,6 +135,7 @@ describe('memberships', () => {
     const anotherPersNo = anotherClient.getPersNo();
     await anotherClient.disconnect();
 
+
     const all = await client.getMembershipsForPerson(anotherPersNo);
     const confNo = all.memberships[0].conference.conf_no;
 
@@ -147,6 +150,7 @@ describe('memberships', () => {
     const anotherClient = await createLoggedInClient(ANOTHER_USER);
     const anotherPersNo = anotherClient.getPersNo();
     await anotherClient.disconnect();
+
 
     const unreads = await client.getMembershipUnreadsForPerson(anotherPersNo);
 

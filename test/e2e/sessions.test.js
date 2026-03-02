@@ -1,7 +1,7 @@
 import { describe, it, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClient, createLoggedInClient, TEST_USER, HTTPKOM_BASE_URL, LYSKOM_SERVER_ID } from './helpers.js';
-import { HttpkomClient } from '../../src/HttpkomClient.js';
+import { LyskomClient } from '../../dist/index.js';
 
 describe('sessions', () => {
   let client;
@@ -99,7 +99,7 @@ describe('sessions', () => {
     assert.ok(obj.session);
 
     // Restore into a new client
-    const restored = new HttpkomClient({
+    const restored = LyskomClient.fromObject({
       ...obj,
       httpkomServer: HTTPKOM_BASE_URL,
     });
@@ -123,40 +123,48 @@ describe('sessions', () => {
     assert.equal(servers[LYSKOM_SERVER_ID].id, LYSKOM_SERVER_ID);
   });
 
-  it('should emit events on login and logout', async () => {
+  it('should notify subscribers on login and logout', async () => {
     client = createClient();
     await client.connect();
 
-    const events = [];
-    client.on('jskom:session:changed', (event) => {
-      events.push('session:changed');
-    });
-    client.on('jskom:connection:changed', (event) => {
-      events.push('connection:changed');
+    let notifyCount = 0;
+    const unsubscribe = client.subscribe(() => {
+      notifyCount++;
     });
 
+    const prevCount = notifyCount;
     await client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd });
-    assert.ok(events.includes('session:changed'), 'login should emit session:changed');
-    assert.ok(events.includes('connection:changed'), 'login should emit connection:changed');
+    assert.ok(notifyCount > prevCount, 'login should notify subscribers');
 
-    events.length = 0;
+    const snap = client.getSnapshot();
+    assert.equal(snap.isLoggedIn, true);
+    assert.ok(snap.persNo > 0);
+
+    const preLogout = notifyCount;
     await client.logout();
-    assert.ok(events.includes('session:changed'), 'logout should emit session:changed');
+    assert.ok(notifyCount > preLogout, 'logout should notify subscribers');
+
+    const snapAfter = client.getSnapshot();
+    assert.equal(snapAfter.isLoggedIn, false);
+    assert.equal(snapAfter.persNo, null);
+
+    unsubscribe();
   });
 
-  it('should unsubscribe event listeners', async () => {
+  it('should unsubscribe listeners', async () => {
     client = createClient();
     await client.connect();
 
     let called = 0;
-    const unsubscribe = client.on('jskom:session:changed', () => { called++; });
+    const unsubscribe = client.subscribe(() => { called++; });
 
     await client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd });
-    assert.equal(called, 1);
+    const afterLogin = called;
+    assert.ok(afterLogin > 0);
 
     unsubscribe();
 
     await client.logout();
-    assert.equal(called, 1, 'Should not be called after unsubscribe');
+    assert.equal(called, afterLogin, 'Should not be called after unsubscribe');
   });
 });

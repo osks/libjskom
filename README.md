@@ -31,3 +31,14 @@ npm install
 | `npm run docs:serve` | Serve API docs locally at `http://localhost:8000` |
 | `npm run docs:build` | Build static docs HTML into `site/` |
 | `npm run docs:api` | Regenerate `docs/api.md` from JSDoc annotations |
+
+
+## Authors
+
+Oskar Skoog <oskar@osd.se>
+
+
+## Copyright and license
+
+Copyright (c) 2025-2026 Oskar Skoog. libjskom is provided under the
+MIT license. See the included LICENSE.txt file for specifics.

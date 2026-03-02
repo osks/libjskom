@@ -1,16 +1,22 @@
 {
   "name": "libjskom",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
-  "exports": "./src/HttpkomClient.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
   "private": true,
   "scripts": {
+    "build": "tsc",
+    "test:unit": "node --test test/unit/*.test.js",
     "test:e2e": "bash test/e2e/run.sh",
-    "docs:api": "npx jsdoc2md 'src/*.js' > docs/api.md",
-    "docs:build": "npm run docs:api && uvx --with mkdocs-material mkdocs build --strict",
-    "docs:serve": "npm run docs:api && uvx --with mkdocs-material mkdocs serve"
+    "test": "npm run test:unit && npm run test:e2e"
   },
   "devDependencies": {
-    "jsdoc-to-markdown": "^9.1.3"
+    "typescript": "^5.7.0"
   }
 }

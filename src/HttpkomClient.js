@@ -5,6 +5,7 @@ import { MembershipListHandler } from './MembershipListHandler.js';
 import { MembershipsMixin } from './MembershipsMixin.js';
 import { SessionsMixin } from './SessionsMixin.js';
 import { PersonsMixin } from './PersonsMixin.js';
+import { TextsMixin } from './TextsMixin.js';
 
 // Create a helper to mix in methods to the target prototype.
 function mixin(target, source) {
@@ -29,7 +30,14 @@ function mixin(target, source) {
 class HttpkomClient extends HttpkomConnection{
   /** @type {number} */
   currentConferenceNo = 0;
-  memberships;
+
+  /** Adapter used by MembershipListHandler to call mixin methods on a connection. */
+  memberships = {
+    getMemberships(conn, options) { return conn.getMemberships(options); },
+    getMembershipUnreads(conn) { return conn.getMembershipUnreads(); },
+    getMembershipUnread(conn, confNo) { return conn.getMembershipUnread(confNo); },
+    getMembership(conn, confNo) { return conn.getMembership(confNo); },
+  };
 
   #membershipListHandler;
 
@@ -176,5 +184,6 @@ class HttpkomClient extends HttpkomConnection{
 mixin(HttpkomClient, MembershipsMixin);
 mixin(HttpkomClient, PersonsMixin);
 mixin(HttpkomClient, SessionsMixin);
+mixin(HttpkomClient, TextsMixin);
 
 export { HttpkomClient };

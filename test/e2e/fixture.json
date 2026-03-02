@@ -6,13 +6,16 @@
   "login": { "pers_name": "Test User", "passwd": "test123" },
   "conferences": [
     { "name": "Test Conference" },
-    { "name": "General Discussion" }
+    { "name": "General Discussion" },
+    { "name": "Reader Test" }
   ],
   "memberships": [
     { "pers_name": "Test User", "conf_name": "Test Conference" },
     { "pers_name": "Test User", "conf_name": "General Discussion" },
+    { "pers_name": "Test User", "conf_name": "Reader Test" },
     { "pers_name": "Another User", "conf_name": "Test Conference" },
-    { "pers_name": "Another User", "conf_name": "General Discussion" }
+    { "pers_name": "Another User", "conf_name": "General Discussion" },
+    { "pers_name": "Another User", "conf_name": "Reader Test" }
   ],
   "texts": [
     {
@@ -36,6 +39,58 @@
       "body": "General discussion starts here.",
       "content_type": "text/x-kom-basic",
       "recipient_list": [{ "type": "to", "recpt": { "conf_name": "General Discussion" }}]
+    },
+    {
+      "id": "root-a",
+      "author": "Another User",
+      "subject": "Root A",
+      "body": "First root text in Reader Test.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}]
+    },
+    {
+      "id": "footnote-a",
+      "author": "Another User",
+      "subject": "Footnote A",
+      "body": "A footnote on Root A.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}],
+      "comment_to_list": [{ "type": "footnote", "id": "root-a" }]
+    },
+    {
+      "id": "reply-a1",
+      "author": "Another User",
+      "subject": "Reply A1",
+      "body": "First reply to Root A.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}],
+      "comment_to_list": [{ "type": "comment", "id": "root-a" }]
+    },
+    {
+      "id": "reply-a1-deep",
+      "author": "Another User",
+      "subject": "Reply A1 Deep",
+      "body": "A deep reply to Reply A1.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}],
+      "comment_to_list": [{ "type": "comment", "id": "reply-a1" }]
+    },
+    {
+      "id": "reply-a2",
+      "author": "Another User",
+      "subject": "Reply A2",
+      "body": "Second reply to Root A.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}],
+      "comment_to_list": [{ "type": "comment", "id": "root-a" }]
+    },
+    {
+      "id": "root-b",
+      "author": "Another User",
+      "subject": "Root B",
+      "body": "Second root text in Reader Test.",
+      "content_type": "text/x-kom-basic",
+      "recipient_list": [{ "type": "to", "recpt": { "conf_name": "Reader Test" }}]
     }
   ]
 }

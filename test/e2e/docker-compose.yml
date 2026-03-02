@@ -22,7 +22,7 @@ services:
       context: .
       dockerfile: Dockerfile.httpkom
     ports:
-      - "5001:5001"
+      - "5101:5001"
     depends_on:
       seed:
         condition: service_completed_successfully

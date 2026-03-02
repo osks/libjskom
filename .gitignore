@@ -3,6 +3,7 @@
 .#*
 
 node_modules/
+dist/
 docs/api.md
 site/
 .venv/

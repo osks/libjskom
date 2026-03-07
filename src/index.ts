@@ -13,11 +13,17 @@ export type {
   MIRecipient,
   AuxItem,
   KomMark,
-  ReaderState,
   Snapshot,
   ClientObject,
   LyskomClientOptions,
+  ReadInfo,
+  ReadInfoType,
+  AdvanceResult,
+  ReaderSnapshot,
+  TextGetter,
+  GetMemberships,
 } from './types.js';
 
 export { LyskomClient } from './LyskomClient.js';
 export { LRUMap } from './lru.js';
+export { Reader } from './Reader.js';

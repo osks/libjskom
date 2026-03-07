@@ -123,13 +123,48 @@ export interface KomMark {
 
 // === Reader ===
 
-export interface ReaderState {
+// --- Reader types ---
+
+// ReadInfoType categorizes entries in the reading list. These types
+// originate from the elisp LysKOM client's read-info model and are
+// a client-side concept — Protocol A has no notion of reading lists.
+//
+// - CONF:    Unread texts discovered from a conference membership's
+//            unread_texts list. The normal reading flow.
+// - COMM-IN: Comments on a text the user just read, discovered lazily
+//            during advance(). Prepended to the reading list for DFS.
+// - FOOTN-IN: Footnotes on a text. Like COMM-IN but read before comments.
+// - REVIEW:  Explicitly requested text view (e.g. "show parent",
+//            "show commented text", viewing a marked text). Unlike the
+//            other types, REVIEW bypasses the isUnread check — the text
+//            may have already been read. The caller decides whether to
+//            mark it as read. In the elisp client, REVIEW entries are
+//            never marked as read; our caller (LyskomClient) can choose
+//            the same behavior.
+export type ReadInfoType = 'CONF' | 'COMM-IN' | 'FOOTN-IN' | 'REVIEW';
+
+export interface ReadInfo {
+  type: ReadInfoType;
   confNo: number;
-  queue: number[];
-  position: number;
-  building: boolean;
-  pending: number[];
+  textList: number[];
+  commTo?: number;
 }
+
+export interface AdvanceResult {
+  textNo: number;
+  type: ReadInfoType;
+  confNo: number;
+  commTo?: number;
+}
+
+export interface ReaderSnapshot {
+  currentConfNo: number | null;
+  readingList: ReadInfo[];
+  conferenceFinished: boolean;
+}
+
+export type TextGetter = (textNo: number) => Promise<KomText | undefined>;
+export type GetMemberships = () => Membership[];
 
 // === Snapshot ===
 
@@ -142,7 +177,7 @@ export interface Snapshot {
   servers: Record<string, LyskomServer>;
   memberships: Membership[];
   texts: Map<number, KomText>;
-  reader: ReaderState | null;
+  reader: ReaderSnapshot | null;
   marks: KomMark[];
 }
 

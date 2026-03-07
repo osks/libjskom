@@ -222,6 +222,56 @@ describe('reader', () => {
     assert.equal(membership.no_of_unread, 0, 'Unread count should be 0');
   });
 
+  it('should have reader state available immediately after enterConference (before HTTP resolves)', async () => {
+    // Call enterConference but don't await — reader state should be set
+    // synchronously before the first internal await
+    const promise = client.enterConference(readerConfNo);
+
+    const reader = client.getSnapshot().reader;
+    assert.ok(reader, 'Reader state should exist immediately');
+    assert.equal(reader.confNo, readerConfNo);
+    assert.equal(reader.position, -1);
+    assert.ok(reader.queue.length > 0, 'Queue should have unread texts from membership');
+    assert.equal(reader.building, true);
+
+    await promise;
+  });
+
+  it('should allow advance() immediately after nextUnreadConference()', async () => {
+    // Set up unreads on multiple conferences
+    const memberships = client.getSnapshot().memberships;
+    for (const m of memberships) {
+      if (!m.conference.type.letterbox && m.conference.conf_no !== readerConfNo) {
+        await client.setNumberOfUnreadTexts(m.conference.conf_no, 100);
+      }
+    }
+
+    await waitForCondition(() => {
+      const snap = client.getSnapshot();
+      return snap.memberships.filter(
+        m => m.no_of_unread > 0 && !m.conference.type.letterbox
+      ).length >= 2;
+    });
+
+    // Enter first conference and drain it
+    await client.enterConference(readerConfNo);
+    await waitForReader(client);
+    while (client.advance() !== null) {}
+
+    // Switch to next conference — advance() should work immediately
+    const nextConfNo = client.nextUnreadConference();
+    assert.ok(nextConfNo !== null, 'Should find another unread conference');
+
+    const textNo = client.advance();
+    assert.ok(textNo !== null, 'advance() should return a text immediately after nextUnreadConference()');
+
+    // Wait for background enterConference to complete before cleanup
+    await waitForCondition(() => {
+      const reader = client.getSnapshot().reader;
+      return reader && !reader.building;
+    });
+  });
+
   it('should cancel previous build when entering conference again', async () => {
     // Enter once
     await client.enterConference(readerConfNo);

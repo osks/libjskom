@@ -1,4 +1,5 @@
 import { LRUMap } from './lru.js';
+import { Reader } from './Reader.js';
 import type {
   Session,
   Person,
@@ -8,7 +9,7 @@ import type {
   MembershipUnread,
   KomText,
   KomMark,
-  ReaderState,
+  AdvanceResult,
   ClientObject,
   LyskomClientOptions,
   MIRecipient,
@@ -99,7 +100,7 @@ export class LyskomClient {
   #inFlight = new Map<number, Promise<KomText>>();
 
   // --- Reader ---
-  #buildReaderAbort: AbortController | null = null;
+  #reader: Reader | null = null;
 
   // --- Conference tracking ---
   #currentConferenceNo = 0;
@@ -457,7 +458,7 @@ export class LyskomClient {
     // Check if we deleted our own session
     if (sessionNo === 0 || sessionNo === this.#session?.session_no) {
       this.#stopPolling();
-      this.#cancelBuildReader();
+      this.#reader = null;
       for (const req of this.#pendingRequests) {
         req.controller.abort();
       }
@@ -501,6 +502,11 @@ export class LyskomClient {
       personName: person.pers_name,
     });
 
+    this.#reader = new Reader(
+      (textNo) => this.getText(textNo),
+      () => this.#state.memberships,
+    );
+
     // Kick off background tasks
     this.#fetchMemberships();
     this.#startPolling();
@@ -522,7 +528,7 @@ export class LyskomClient {
     this.#membershipInitPromise = null;
     this.#textCache.clear();
     this.#inFlight.clear();
-    this.#cancelBuildReader();
+    this.#reader = null;
     this.#setState({
       isLoggedIn: false,
       persNo: null,
@@ -537,6 +543,12 @@ export class LyskomClient {
   /** Re-fetch memberships, marks, and restart polling after restoring from a serialized session. */
   resume(): void {
     if (!this.isLoggedIn()) return;
+    if (!this.#reader) {
+      this.#reader = new Reader(
+        (textNo) => this.getText(textNo),
+        () => this.#state.memberships,
+      );
+    }
     this.fetchServers().catch(() => {});
     this.#fetchMemberships();
     this.#startPolling();
@@ -545,7 +557,7 @@ export class LyskomClient {
 
   destroy(): void {
     this.#stopPolling();
-    this.#cancelBuildReader();
+    this.#reader = null;
     for (const req of this.#pendingRequests) {
       req.controller.abort();
     }
@@ -800,8 +812,8 @@ export class LyskomClient {
         ),
       });
       // If currently reading this conference, rebuild reading order
-      if (this.#state.reader?.confNo === confNo) {
-        this.enterConference(confNo);
+      if (this.#state.reader?.currentConfNo === confNo) {
+        this.enterConference(confNo).catch(() => {});
       }
     } catch {
       // Best-effort
@@ -959,24 +971,10 @@ export class LyskomClient {
       }),
     });
 
-    // If the reader is active, check for new unread texts in the current conference
-    const reader = this.#state.reader;
-    if (reader) {
-      const u = unreadMap.get(reader.confNo);
-      if (u) {
-        const known = new Set([...reader.queue, ...reader.pending]);
-        const newTexts = u.unread_texts.filter(t => !known.has(t));
-        if (newTexts.length > 0) {
-          // Prefetch so they're ready when advance() returns them
-          for (const t of newTexts) {
-            this.getText(t).catch(() => {});
-          }
-          this.#setState({
-            reader: { ...this.#state.reader!, pending: [...this.#state.reader!.pending, ...newTexts] },
-          });
-        }
-      }
-    }
+    // Reader picks up new unreads automatically when a CONF entry's
+    // textList is exhausted and it re-reads memberships. Sync state
+    // so conferenceFinished updates.
+    this.#syncReaderState();
   }
 
   #markTextAsReadLocally(textNo: number, confNos: number[]): void {
@@ -1105,12 +1103,18 @@ export class LyskomClient {
   // Reader (Phase 7)
   // ================================================================
 
-  async enterConference(confNo: number): Promise<void> {
-    this.#cancelBuildReader();
+  #syncReaderState(): void {
+    this.#setState({ reader: this.#reader?.state ?? null });
+  }
 
-    // Set working conference on server
+  async enterConference(confNo: number): Promise<void> {
+    if (!this.#reader) return;
     const previousConfNo = this.#currentConferenceNo;
     this.#currentConferenceNo = confNo;
+
+    this.#reader.enterConference(confNo);
+    this.#syncReaderState();
+
     try {
       await this.#http(
         {
@@ -1122,33 +1126,15 @@ export class LyskomClient {
         true
       );
     } catch {
-      this.#currentConferenceNo = previousConfNo;
-      throw new Error(`Failed to enter conference ${confNo}`);
+      // Don't revert Reader state — advance() may already be in progress
+      // and reverting would cause it to return texts from the new conference
+      // while the snapshot shows the old one. The working-conference HTTP
+      // call is a server notification, not required for reading.
     }
 
-    // If leaving a previous conference, re-fetch its membership (last-time-read updated)
     if (previousConfNo !== 0 && previousConfNo !== confNo) {
       this.#refreshMembership(previousConfNo);
     }
-
-    // Initialize reader state
-    const membership = this.#state.memberships.find(
-      m => m.conference.conf_no === confNo
-    );
-    const unreadTexts = membership?.unread_texts ?? [];
-
-    this.#setState({
-      reader: {
-        confNo,
-        queue: [...unreadTexts],
-        position: -1,
-        building: true,
-        pending: [],
-      },
-    });
-
-    // Start building DFS reading order
-    this.#buildReadingOrder(confNo, unreadTexts);
   }
 
   // Backward-compatible alias for changeConference
@@ -1175,68 +1161,40 @@ export class LyskomClient {
     }
   }
 
-  advance(): number | null {
-    const reader = this.#state.reader;
-    if (!reader) return null;
+  async advance(): Promise<AdvanceResult | null> {
+    if (!this.#reader) return null;
+    const result = await this.#reader.advance();
+    if (result === null) { this.#syncReaderState(); return null; }
 
-    // Pending texts take priority
-    if (reader.pending.length > 0) {
-      const [textNo, ...rest] = reader.pending;
-      this.#setState({
-        reader: { ...reader, pending: rest },
-      });
-      // Mark as read (optimistic)
-      const text = this.#textCache.get(textNo);
+    // Mark as read (skip for REVIEW)
+    if (result.type !== 'REVIEW') {
+      const text = this.#textCache.get(result.textNo);
       if (text) {
         const confNos = text.recipient_list.map(r => r.recpt.conf_no);
-        this.#markTextAsReadLocally(textNo, confNos);
+        this.#markTextAsReadLocally(result.textNo, confNos);
       }
-      this.markAsRead(textNo).catch(() => {});
-      return textNo;
+      this.markAsRead(result.textNo).catch(() => {});
     }
 
-    // Then continue DFS queue
-    const next = reader.position + 1;
-    if (next >= reader.queue.length) return null;
-
-    const textNo = reader.queue[next];
-    this.#setState({
-      reader: { ...reader, position: next },
-    });
-
-    // Mark as read (optimistic)
-    const text = this.#textCache.get(textNo);
-    if (text) {
-      const confNos = text.recipient_list.map(r => r.recpt.conf_no);
-      this.#markTextAsReadLocally(textNo, confNos);
-    }
-    this.markAsRead(textNo).catch(() => {});
-
-    // Prefetch ahead
-    this.#prefetch(next);
-
-    return textNo;
+    this.#prefetchFromReader();
+    this.#syncReaderState();
+    return result;
   }
 
   nextUnreadConference(): number | null {
-    const currentConfNo = this.#state.reader?.confNo;
-    const next = this.#state.memberships.find(
-      m => m.no_of_unread > 0 && m.conference.conf_no !== currentConfNo
-    );
-    if (next) {
-      this.enterConference(next.conference.conf_no);
-      return next.conference.conf_no;
+    if (!this.#reader) return null;
+    const confNo = this.#reader.nextUnreadConference();
+    if (confNo !== null) {
+      this.enterConference(confNo).catch(() => {});
     }
-    return null;
+    return confNo;
   }
 
   async skipConference(): Promise<void> {
-    const reader = this.#state.reader;
-    if (!reader) return;
+    if (!this.#reader) return;
+    const confNo = this.#reader.state.currentConfNo;
+    if (confNo === null) return;
 
-    const confNo = reader.confNo;
-
-    // Tell server to set unread count to 0
     await this.#http(
       {
         method: 'post',
@@ -1247,103 +1205,39 @@ export class LyskomClient {
       true
     );
 
-    this.#cancelBuildReader();
+    this.#reader.skipConference();
     this.#setState({
-      reader: null,
       memberships: this.#state.memberships.map(m =>
         m.conference.conf_no === confNo
           ? { ...m, no_of_unread: 0, unread_texts: [] }
           : m
       ),
     });
+    this.#syncReaderState();
   }
 
   showText(textNo: number): void {
-    const reader = this.#state.reader;
-    if (!reader) return;
-
-    // Fetch if not cached
+    if (!this.#reader) return;
     if (!this.#textCache.has(textNo)) {
       this.getText(textNo).catch(() => {});
     }
-
-    this.#setState({
-      reader: { ...reader, pending: [...reader.pending, textNo] },
-    });
+    this.#reader.showText(textNo);
+    this.#syncReaderState();
   }
 
   // --- Reader internals ---
 
-  #cancelBuildReader(): void {
-    if (this.#buildReaderAbort) {
-      this.#buildReaderAbort.abort();
-      this.#buildReaderAbort = null;
-    }
-  }
-
-  async #buildReadingOrder(confNo: number, unreadTexts: number[]): Promise<void> {
-    const abort = new AbortController();
-    this.#buildReaderAbort = abort;
-
-    const unreadSet = new Set(unreadTexts);
-    const ordered: number[] = [];
-    const remaining = [...unreadTexts];
-
-    while (remaining.length > 0) {
-      if (abort.signal.aborted) return;
-
-      const textNo = remaining.shift()!;
-      if (!unreadSet.has(textNo)) continue;
-      unreadSet.delete(textNo);
-      ordered.push(textNo);
-
-      try {
-        const text = await this.getText(textNo);
-
-        // Find unread comments — insert them next (DFS)
-        const unreadComments = (text.comment_in_list ?? [])
-          .filter(c => c.type === 'comment' && unreadSet.has(c.text_no))
-          .map(c => c.text_no);
-
-        // Footnotes first, then comments
-        const unreadFootnotes = (text.comment_in_list ?? [])
-          .filter(c => c.type === 'footnote' && unreadSet.has(c.text_no))
-          .map(c => c.text_no);
-
-        remaining.unshift(...unreadFootnotes, ...unreadComments);
-      } catch {
-        // If fetch fails, keep textNo in order but don't expand
-      }
-
-      // Update queue incrementally
-      if (!abort.signal.aborted && this.#state.reader?.confNo === confNo) {
-        this.#setState({
-          reader: {
-            ...this.#state.reader,
-            queue: [...ordered, ...remaining],
-            building: remaining.length > 0,
-          },
-        });
-      }
-    }
-
-    // Mark building as done
-    if (!abort.signal.aborted && this.#state.reader?.confNo === confNo) {
-      this.#setState({
-        reader: { ...this.#state.reader, building: false },
-      });
-    }
-  }
-
-  #prefetch(fromPosition: number): void {
-    const reader = this.#state.reader;
-    if (!reader) return;
-
-    const AHEAD = 5;
-    for (let i = fromPosition + 1; i < Math.min(fromPosition + AHEAD, reader.queue.length); i++) {
-      const textNo = reader.queue[i];
-      if (!this.#textCache.has(textNo)) {
-        this.getText(textNo).catch(() => {}); // fire-and-forget
+  #prefetchFromReader(): void {
+    if (!this.#reader) return;
+    const { readingList } = this.#reader.state;
+    let count = 0;
+    for (const entry of readingList) {
+      for (const textNo of entry.textList) {
+        if (count >= 5) return;
+        if (!this.#textCache.has(textNo)) {
+          this.getText(textNo).catch(() => {});
+          count++;
+        }
       }
     }
   }

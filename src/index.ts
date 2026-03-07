@@ -27,3 +27,5 @@ export type {
 export { LyskomClient } from './LyskomClient.js';
 export { LRUMap } from './lru.js';
 export { Reader } from './Reader.js';
+export { setLogLevel, disableLogging } from './log.js';
+export type { LogLevel } from './log.js';

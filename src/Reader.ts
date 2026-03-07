@@ -1,3 +1,4 @@
+import { createLogger } from './log.js';
 import type {
   AdvanceResult,
   GetMemberships,
@@ -7,6 +8,7 @@ import type {
 } from './types.js';
 
 export class Reader {
+  #log = createLogger('Reader');
   #readingList: ReadInfo[] = [];
   #skippedConferences = new Set<number>();
   #currentConfNo: number | null = null;
@@ -39,6 +41,7 @@ export class Reader {
     }
 
     this.#currentConfNo = confNo;
+    this.#log.info(`enterConference(${confNo}) - ${unreadTexts.length} unread texts`);
   }
 
   nextUnreadConference(): number | null {
@@ -54,6 +57,7 @@ export class Reader {
 
   skipConference(): void {
     if (this.#currentConfNo !== null) {
+      this.#log.info(`skipConference(${this.#currentConfNo})`);
       this.#skippedConferences.add(this.#currentConfNo);
       this.#readingList = this.#readingList.filter(
         (ri) => ri.confNo !== this.#currentConfNo
@@ -73,6 +77,7 @@ export class Reader {
           textNo = candidate;
           break;
         }
+        this.#log.debug(`advance - skipping ${candidate} (already read)`);
       }
 
       if (textNo !== null) {
@@ -97,6 +102,7 @@ export class Reader {
         // Prepend comments first, then footnotes in front of those
         // Result: [FOOTN-IN, COMM-IN, front, ...rest]
         if (comments.length > 0) {
+          this.#log.info(`advance - DFS: text ${textNo} has comments [${comments.join(', ')}], prepending COMM-IN`);
           this.#readingList.unshift({
             type: 'COMM-IN',
             confNo: front.confNo,
@@ -105,6 +111,7 @@ export class Reader {
           });
         }
         if (footnotes.length > 0) {
+          this.#log.info(`advance - DFS: text ${textNo} has footnotes [${footnotes.join(', ')}], prepending FOOTN-IN`);
           this.#readingList.unshift({
             type: 'FOOTN-IN',
             confNo: front.confNo,
@@ -113,6 +120,7 @@ export class Reader {
           });
         }
 
+        this.#log.info(`advance - text ${textNo}, type=${front.type}, conf=${front.confNo}`);
         return {
           textNo,
           type: front.type,
@@ -123,12 +131,14 @@ export class Reader {
 
       // front.textList exhausted
       if (front.type === 'CONF') {
+        this.#log.debug(`advance - CONF entry exhausted, refreshing from memberships`);
         // Refresh from memberships — catches polling-discovered texts
         const membership = this.#getMemberships().find(
           (m) => m.conference.conf_no === front.confNo
         );
         const remaining = membership?.unread_texts ?? [];
         if (remaining.length > 0) {
+          this.#log.debug(`advance - CONF refresh: ${remaining.length} new texts`);
           front.textList = [...remaining];
           continue;
         }
@@ -137,10 +147,12 @@ export class Reader {
       this.#readingList.shift();
     }
 
+    this.#log.info('advance - null (all read)');
     return null;
   }
 
   showText(textNo: number): void {
+    this.#log.info(`showText(${textNo}) - prepending REVIEW`);
     this.#readingList.unshift({
       type: 'REVIEW',
       confNo: this.#currentConfNo ?? 0,

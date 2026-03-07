@@ -1,3 +1,4 @@
+import { createLogger } from './log.js';
 import { LRUMap } from './lru.js';
 import { Reader } from './Reader.js';
 import type {
@@ -68,6 +69,8 @@ function initialSnapshot(): Snapshot {
 }
 
 export class LyskomClient {
+  #log = createLogger('LyskomClient');
+
   // --- Identity ---
   #id: string;
   #lyskomServerId: string;
@@ -278,18 +281,22 @@ export class LyskomClient {
         : undefined;
 
       if (status === 401) {
+        this.#log.warn(`#request - 401 on ${config.url}, cancelling login-requiring requests and resetting person`);
         this.#cancelAllPendingRequestsRequiringLogin();
         this.#resetPerson();
       } else if (status === 403) {
+        this.#log.warn(`#request - 403 on ${config.url}, session expired — cancelling session requests and resetting`);
         this.#cancelAllPendingRequestsRequiringSession();
         this.#resetSession();
       } else if (status === 502) {
+        this.#log.warn(`#request - 502 on ${config.url}, backend unreachable — cancelling session requests`);
         this.#cancelAllPendingRequestsRequiringSession();
       } else if (status === 500) {
         const errorData = typeof error === 'object' && error !== null && 'data' in error
           ? (error as HttpError).data as Record<string, unknown> | null
           : null;
         if (errorData?.error_type === 'httpkom' && errorData.error_msg === '') {
+          this.#log.warn(`#request - 500 (httpkom) on ${config.url}, resetting session`);
           this.#cancelAllPendingRequestsRequiringSession();
           this.#resetSession();
         }
@@ -299,6 +306,7 @@ export class LyskomClient {
   }
 
   async #createSessionAndRetry(originalRequest: HttpConfig, requireSession: boolean, requireLogin: boolean): Promise<HttpResponse> {
+    this.#log.warn(`#createSessionAndRetry - retrying ${originalRequest.url}`);
     if (this.#createSessionPromise === null) {
       this.#createSessionPromise = this.#createSession();
       try {
@@ -324,13 +332,20 @@ export class LyskomClient {
       url: this.#urlFor('/sessions/'),
       data: { client: { name: this.#clientName, version: this.#clientVersion } },
     };
-    const response = await this.#request(config, false, false);
+    let response;
+    try {
+      response = await this.#request(config, false, false);
+    } catch (error) {
+      this.#log.error('#createSession - failed');
+      throw error;
+    }
     const data = response.data as Record<string, unknown>;
     this.#httpkomId = data.connection_id as string;
     const { connection_id: _, ...sessionData } = data;
     const session = sessionData as unknown as Session;
     this.#session = session;
     this.#setState({ connectionStatus: 'connected' });
+    this.#log.debug(`#createSession - success, httpkomId=${this.#httpkomId}`);
     return session;
   }
 
@@ -428,15 +443,23 @@ export class LyskomClient {
       this.#lyskomServerId = lyskomServerId;
     }
 
-    const response = await this.#http(
-      {
-        method: 'post',
-        url: '/sessions/',
-        data: { client: { name: this.#clientName, version: this.#clientVersion } },
-      },
-      false,
-      false
-    );
+    const sid = this.#lyskomServerId;
+    this.#log.info(`connect(${sid})...`);
+    let response;
+    try {
+      response = await this.#http(
+        {
+          method: 'post',
+          url: '/sessions/',
+          data: { client: { name: this.#clientName, version: this.#clientVersion } },
+        },
+        false,
+        false
+      );
+    } catch (error) {
+      this.#log.error(`connect(${sid}) - failed`);
+      throw error;
+    }
 
     const data = response.data as Record<string, unknown>;
     this.#httpkomId = data.connection_id as string;
@@ -446,17 +469,20 @@ export class LyskomClient {
     };
     this.#session = session;
     this.#setState({ connectionStatus: 'connected', serverId: this.#lyskomServerId });
+    this.#log.info(`connect(${sid}) - success, httpkomId=${this.#httpkomId}`);
     return session;
   }
 
   async disconnect(sessionNo = 0): Promise<void> {
-    const response = await this.#http(
+    this.#log.info('disconnect()...');
+    await this.#http(
       { method: 'delete', url: `/sessions/${sessionNo}` },
       true,
       false
     );
     // Check if we deleted our own session
     if (sessionNo === 0 || sessionNo === this.#session?.session_no) {
+      this.#log.info('disconnect - success');
       this.#stopPolling();
       this.#reader = null;
       for (const req of this.#pendingRequests) {
@@ -477,6 +503,9 @@ export class LyskomClient {
 
   async login(credentials: { persNo?: number; name?: string; passwd: string }): Promise<Person> {
     const data: Record<string, unknown> = {};
+    const loginId = credentials.persNo !== undefined
+      ? String(credentials.persNo)
+      : credentials.name ?? '?';
 
     if (credentials.persNo !== undefined) {
       data.pers_no = credentials.persNo;
@@ -487,11 +516,18 @@ export class LyskomClient {
     }
     data.passwd = credentials.passwd;
 
-    const response = await this.#http(
-      { method: 'post', url: '/sessions/current/login', data },
-      true,
-      false
-    );
+    this.#log.info(`login(${loginId})...`);
+    let response;
+    try {
+      response = await this.#http(
+        { method: 'post', url: '/sessions/current/login', data },
+        true,
+        false
+      );
+    } catch (error) {
+      this.#log.error(`login(${loginId}) - failed`);
+      throw error;
+    }
 
     const person = response.data as Person;
     this.#session = { ...this.#session!, person };
@@ -501,6 +537,8 @@ export class LyskomClient {
       persNo: person.pers_no,
       personName: person.pers_name,
     });
+
+    this.#log.info(`login(${loginId}) - success, persNo=${person.pers_no}`);
 
     this.#reader = new Reader(
       (textNo) => this.getText(textNo),
@@ -516,6 +554,7 @@ export class LyskomClient {
   }
 
   async logout(): Promise<void> {
+    this.#log.info('logout()...');
     this.#stopPolling();
     await this.#http(
       { method: 'post', url: '/sessions/current/logout' },
@@ -538,11 +577,13 @@ export class LyskomClient {
       reader: null,
       marks: [],
     });
+    this.#log.info('logout - success');
   }
 
   /** Re-fetch memberships, marks, and restart polling after restoring from a serialized session. */
   resume(): void {
     if (!this.isLoggedIn()) return;
+    this.#log.info('resume');
     if (!this.#reader) {
       this.#reader = new Reader(
         (textNo) => this.getText(textNo),
@@ -824,6 +865,7 @@ export class LyskomClient {
 
   #fetchMemberships(): void {
     if (this.#membershipInitPromise) return;
+    this.#log.debug('#fetchMemberships');
 
     this.#membershipInitPromise = (async () => {
       try {
@@ -960,6 +1002,8 @@ export class LyskomClient {
   }
 
   #mergeUnreads(unreads: MembershipUnread[]): void {
+    const total = unreads.reduce((sum, u) => sum + u.no_of_unread, 0);
+    this.#log.debug(`#mergeUnreads - ${unreads.length} conferences, ${total} total unread`);
     const unreadMap = new Map(unreads.map(u => [u.conf_no, u]));
     this.#setState({
       memberships: this.#state.memberships.map(m => {
@@ -1006,16 +1050,25 @@ export class LyskomClient {
   async getText(textNo: number): Promise<KomText> {
     // Check LRU cache
     const cached = this.#textCache.get(textNo);
-    if (cached) return cached;
+    if (cached) {
+      this.#log.debug(`getText(${textNo}) - cache hit`);
+      return cached;
+    }
 
     // Dedup: if already fetching, return the same promise
     const existing = this.#inFlight.get(textNo);
     if (existing) return existing;
 
+    this.#log.debug(`getText(${textNo}) - fetching`);
     const promise = this.#fetchText(textNo);
     this.#inFlight.set(textNo, promise);
     try {
-      return await promise;
+      const text = await promise;
+      this.#log.debug(`getText(${textNo}) - fetched`);
+      return text;
+    } catch (error) {
+      this.#log.warn(`getText(${textNo}) - error`);
+      throw error;
     } finally {
       this.#inFlight.delete(textNo);
     }
@@ -1040,6 +1093,7 @@ export class LyskomClient {
     recipientList: Array<{ type: string; recpt: { conf_no: number } }>;
     commentToList?: Array<{ type: string; text_no: number }>;
   }): Promise<{ text_no: number }> {
+    this.#log.info(`createText(${params.subject})...`);
     const data = {
       subject: params.subject,
       body: params.body,
@@ -1053,6 +1107,7 @@ export class LyskomClient {
       true
     );
     const result = response.data as { text_no: number };
+    this.#log.info(`createText - success, textNo=${result.text_no}`);
 
     // Refresh unreads so the new text appears in memberships and reader
     this.#refreshUnreads(this.#pollIntervalMs).catch(() => {});
@@ -1061,17 +1116,24 @@ export class LyskomClient {
   }
 
   async markAsRead(textNo: number): Promise<void> {
+    this.#log.info(`markAsRead(${textNo})...`);
     const text = this.#textCache.get(textNo);
     if (text) {
       const confNos = text.recipient_list.map(r => r.recpt.conf_no);
       this.#markTextAsReadLocally(textNo, confNos);
     }
     // Fire-and-forget HTTP
-    await this.#http(
-      { method: 'put', url: `/texts/${textNo}/read-marking`, data: {} },
-      true,
-      true
-    );
+    try {
+      await this.#http(
+        { method: 'put', url: `/texts/${textNo}/read-marking`, data: {} },
+        true,
+        true
+      );
+    } catch (error) {
+      this.#log.warn(`markAsRead(${textNo}) - error (fire-and-forget, continuing)`);
+      throw error;
+    }
+    this.#log.debug(`markAsRead(${textNo}) - done`);
   }
 
   // Backward-compatible aliases
@@ -1109,6 +1171,7 @@ export class LyskomClient {
 
   async enterConference(confNo: number): Promise<void> {
     if (!this.#reader) return;
+    this.#log.info(`enterConference(${confNo})...`);
     const previousConfNo = this.#currentConferenceNo;
     this.#currentConferenceNo = confNo;
 
@@ -1131,6 +1194,8 @@ export class LyskomClient {
       // while the snapshot shows the old one. The working-conference HTTP
       // call is a server notification, not required for reading.
     }
+
+    this.#log.debug(`enterConference(${confNo}) - done`);
 
     if (previousConfNo !== 0 && previousConfNo !== confNo) {
       this.#refreshMembership(previousConfNo);
@@ -1164,7 +1229,13 @@ export class LyskomClient {
   async advance(): Promise<AdvanceResult | null> {
     if (!this.#reader) return null;
     const result = await this.#reader.advance();
-    if (result === null) { this.#syncReaderState(); return null; }
+    if (result === null) {
+      this.#log.info('advance() - null (all read)');
+      this.#syncReaderState();
+      return null;
+    }
+
+    this.#log.info(`advance() - text ${result.textNo}, type=${result.type}, conf=${result.confNo}`);
 
     // Mark as read (skip for REVIEW)
     if (result.type !== 'REVIEW') {
@@ -1185,7 +1256,10 @@ export class LyskomClient {
     if (!this.#reader) return null;
     const confNo = this.#reader.nextUnreadConference();
     if (confNo !== null) {
+      this.#log.info(`nextUnreadConference - found ${confNo}`);
       this.enterConference(confNo).catch(() => {});
+    } else {
+      this.#log.info('nextUnreadConference - null (no unread conferences)');
     }
     return confNo;
   }
@@ -1193,6 +1267,7 @@ export class LyskomClient {
   async skipConference(): Promise<void> {
     if (!this.#reader) return;
     const confNo = this.#reader.state.currentConfNo;
+    this.#log.info(`skipConference(${confNo})...`);
     if (confNo === null) return;
 
     await this.#http(
@@ -1214,6 +1289,7 @@ export class LyskomClient {
       ),
     });
     this.#syncReaderState();
+    this.#log.debug(`skipConference(${confNo}) - done`);
   }
 
   showText(textNo: number): void {
@@ -1230,19 +1306,26 @@ export class LyskomClient {
   #prefetchFromReader(): void {
     if (!this.#reader) return;
     const { readingList } = this.#reader.state;
+    const toPrefetch: number[] = [];
     let count = 0;
     for (const entry of readingList) {
       for (const textNo of entry.textList) {
-        if (count >= 5) return;
+        if (count >= 5) break;
         if (!this.#textCache.has(textNo)) {
           this.getText(textNo).catch(() => {});
+          toPrefetch.push(textNo);
           count++;
         }
       }
+      if (count >= 5) break;
+    }
+    if (toPrefetch.length > 0) {
+      this.#log.debug(`#prefetchFromReader - prefetching [${toPrefetch.join(', ')}]`);
     }
   }
 
   async #refreshMembership(confNo: number): Promise<void> {
+    this.#log.debug(`#refreshMembership(${confNo})`);
     try {
       const [membership, unread] = await Promise.all([
         this.getMembershipForPerson(this.getPersNo()!, confNo),

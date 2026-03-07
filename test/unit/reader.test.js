@@ -89,12 +89,13 @@ describe('Reader', () => {
   // === Basic reading ===
 
   describe('basic reading', () => {
-    it('advance() returns null when no conference entered', async () => {
+    it('advance() auto-enters first conference when none entered', async () => {
       const memberships = [makeMembership(1, [100, 101])];
       const texts = [makeText(100), makeText(101)];
       const reader = createReader(texts, memberships);
       const result = await reader.advance();
-      assert.equal(result, null);
+      assert.equal(result.textNo, 100);
+      assert.equal(reader.state.currentConfNo, 1);
     });
 
     it('advance() returns texts in order within a conference', async () => {
@@ -116,7 +117,7 @@ describe('Reader', () => {
       markAsRead(memberships, 102);
     });
 
-    it('advance() returns null when conference exhausted', async () => {
+    it('advance() returns null when all conferences exhausted', async () => {
       const memberships = [makeMembership(1, [100])];
       const texts = [makeText(100)];
       const reader = createReader(texts, memberships);
@@ -321,9 +322,24 @@ describe('Reader', () => {
       // Mark as read in both conferences
       markAsRead(memberships, 100);
 
+      // Auto-transition to conf 2, but text 100 already read → null
       assert.equal(await reader.advance(), null);
+    });
 
-      // Enter conference 2 — text 100 already read
+    it('cross-conference duplicate via explicit enter', async () => {
+      const memberships = [
+        makeMembership(1, [100]),
+        makeMembership(2, [100]),
+      ];
+      const texts = [makeText(100)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      const r1 = await reader.advance();
+      assert.equal(r1.textNo, 100);
+      markAsRead(memberships, 100);
+
+      // Explicit enter conference 2 — text 100 already read
       reader.enterConference(2);
       assert.equal(await reader.advance(), null);
     });
@@ -508,11 +524,11 @@ describe('Reader', () => {
       assert.deepEqual(s.readingList[0].textList, [100, 101]);
     });
 
-    it('reader.state.conferenceFinished is true when readingList empty', () => {
+    it('reader.state.allRead is true when readingList empty', () => {
       const memberships = [makeMembership(1, [])];
       const reader = createReader([], memberships);
       reader.enterConference(1);
-      assert.equal(reader.state.conferenceFinished, true);
+      assert.equal(reader.state.allRead, true);
     });
 
     it('reader.state returns copies (not mutable references)', () => {
@@ -526,6 +542,150 @@ describe('Reader', () => {
 
       const s2 = reader.state;
       assert.deepEqual(s2.readingList[0].textList, [100]);
+    });
+  });
+
+  // === Auto-transition ===
+
+  describe('auto-transition', () => {
+    it('auto-transitions to next conference when current exhausted', async () => {
+      const memberships = [
+        makeMembership(1, [100, 101]),
+        makeMembership(2, [200]),
+      ];
+      const texts = [makeText(100), makeText(101), makeText(200)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      const r1 = await reader.advance();
+      assert.equal(r1.textNo, 100);
+      markAsRead(memberships, 100);
+
+      const r2 = await reader.advance();
+      assert.equal(r2.textNo, 101);
+      markAsRead(memberships, 101);
+
+      // Auto-transition to conf 2
+      const r3 = await reader.advance();
+      assert.equal(r3.textNo, 200);
+      assert.equal(r3.confNo, 2);
+      assert.equal(reader.state.currentConfNo, 2);
+    });
+
+    it('returns null when all conferences exhausted', async () => {
+      const memberships = [makeMembership(1, [100])];
+      const texts = [makeText(100)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      await reader.advance();
+      markAsRead(memberships, 100);
+
+      assert.equal(await reader.advance(), null);
+    });
+
+    it('skipped conferences are not auto-transitioned to', async () => {
+      const memberships = [
+        makeMembership(1, [100]),
+        makeMembership(2, [200]),
+        makeMembership(3, [300]),
+      ];
+      const texts = [makeText(100), makeText(200), makeText(300)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      await reader.advance(); // 100
+      markAsRead(memberships, 100);
+
+      // Skip conf 2 before auto-transition happens
+      // (nextUnreadConference won't return skipped confs — but we need
+      // to enter conf 2 first to skip it)
+      reader.enterConference(2);
+      reader.skipConference();
+
+      // Now advance should skip conf 2 and go to conf 3
+      const r = await reader.advance();
+      assert.equal(r.textNo, 300);
+      assert.equal(r.confNo, 3);
+    });
+
+    it('no conference entered initially — finds first with unreads', async () => {
+      const memberships = [
+        makeMembership(1, []),
+        makeMembership(2, [200]),
+      ];
+      const texts = [makeText(200)];
+      const reader = createReader(texts, memberships);
+
+      const r = await reader.advance();
+      assert.equal(r.textNo, 200);
+      assert.equal(reader.state.currentConfNo, 2);
+    });
+
+    it('DFS across conference transition', async () => {
+      const memberships = [
+        makeMembership(1, [100, 101]),
+        makeMembership(2, [200]),
+      ];
+      const texts = [
+        makeText(100, [{ textNo: 101 }]),
+        makeText(101),
+        makeText(200),
+      ];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      const order = [];
+      let r;
+      while ((r = await reader.advance()) !== null) {
+        order.push(r.textNo);
+        markAsRead(memberships, r.textNo);
+      }
+      // DFS: 100, then its comment 101, then auto-transition to conf 2
+      assert.deepEqual(order, [100, 101, 200]);
+    });
+
+    it('cross-posted text dedup across auto-transition', async () => {
+      const memberships = [
+        makeMembership(1, [100]),
+        makeMembership(2, [100, 200]),
+      ];
+      const texts = [makeText(100), makeText(200)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      const r1 = await reader.advance();
+      assert.equal(r1.textNo, 100);
+      markAsRead(memberships, 100);
+
+      // Auto-transition to conf 2 — text 100 already read, should get 200
+      const r2 = await reader.advance();
+      assert.equal(r2.textNo, 200);
+      assert.equal(r2.confNo, 2);
+    });
+
+    it('new unreads from polling trigger reading after all-done', async () => {
+      const memberships = [makeMembership(1, [100])];
+      const texts = [makeText(100), makeText(101)];
+      const reader = createReader(texts, memberships);
+      reader.enterConference(1);
+
+      await reader.advance();
+      markAsRead(memberships, 100);
+
+      assert.equal(await reader.advance(), null);
+
+      // Polling adds new unreads
+      memberships[0] = {
+        ...memberships[0],
+        no_of_unread: 1,
+        unread_texts: [101],
+      };
+
+      // Re-enter conference to pick up new unreads
+      reader.enterConference(1);
+      const r = await reader.advance();
+      assert.equal(r.textNo, 101);
     });
   });
 
@@ -677,12 +837,23 @@ describe('Reader', () => {
       assert.deepEqual(order, [100, 101, 103]);
     });
 
-    it('enterConference for non-member conference', async () => {
+    it('enterConference for non-member conference — auto-transitions to next with unreads', async () => {
       const memberships = [makeMembership(1, [100])];
-      const reader = createReader([], memberships);
+      const texts = [makeText(100)];
+      const reader = createReader(texts, memberships);
       reader.enterConference(99); // not a member
       assert.equal(reader.state.currentConfNo, 99);
       assert.equal(reader.state.readingList.length, 0);
+      // Auto-transitions to conf 1
+      const r = await reader.advance();
+      assert.equal(r.textNo, 100);
+      assert.equal(reader.state.currentConfNo, 1);
+    });
+
+    it('enterConference for non-member conference with no other unreads', async () => {
+      const memberships = [makeMembership(1, [])];
+      const reader = createReader([], memberships);
+      reader.enterConference(99); // not a member
       assert.equal(await reader.advance(), null);
     });
   });

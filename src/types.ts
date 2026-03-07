@@ -160,7 +160,8 @@ export interface AdvanceResult {
 export interface ReaderSnapshot {
   currentConfNo: number | null;
   readingList: ReadInfo[];
-  conferenceFinished: boolean;
+  allRead: boolean;
+  advancing: boolean;
 }
 
 export type TextGetter = (textNo: number) => Promise<KomText | undefined>;

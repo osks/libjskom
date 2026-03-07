@@ -853,7 +853,7 @@ export class LyskomClient {
         ),
       });
       // If currently reading this conference, rebuild reading order
-      if (this.#state.reader?.currentConfNo === confNo) {
+      if (this.#currentConferenceNo === confNo) {
         this.enterConference(confNo).catch(() => {});
       }
     } catch {
@@ -1017,7 +1017,7 @@ export class LyskomClient {
 
     // Reader picks up new unreads automatically when a CONF entry's
     // textList is exhausted and it re-reads memberships. Sync state
-    // so conferenceFinished updates.
+    // so allRead updates.
     this.#syncReaderState();
   }
 
@@ -1165,8 +1165,18 @@ export class LyskomClient {
   // Reader (Phase 7)
   // ================================================================
 
+  #advancing = false;
+
   #syncReaderState(): void {
-    this.#setState({ reader: this.#reader?.state ?? null });
+    this.#setState({
+      reader: this.#reader
+        ? {
+            ...this.#reader.state,
+            currentConfNo: this.#currentConferenceNo || null,
+            advancing: this.#advancing,
+          }
+        : null,
+    });
   }
 
   async enterConference(confNo: number): Promise<void> {
@@ -1228,10 +1238,44 @@ export class LyskomClient {
 
   async advance(): Promise<AdvanceResult | null> {
     if (!this.#reader) return null;
-    const result = await this.#reader.advance();
+    const prevConfNo = this.#currentConferenceNo || null;
+
+    this.#advancing = true;
+    this.#syncReaderState();
+
+    let result: AdvanceResult | null;
+    try {
+      result = await this.#reader.advance();
+    } finally {
+      this.#advancing = false;
+    }
+
+    // Detect auto-transition
+    const newConfNo = this.#reader.state.currentConfNo;
+    if (newConfNo !== prevConfNo && newConfNo !== null) {
+      this.#log.info(`advance() - conference transition ${prevConfNo} -> ${newConfNo}`);
+      this.#currentConferenceNo = newConfNo;
+      this.#http(
+        {
+          method: 'post',
+          url: '/sessions/current/working-conference',
+          data: { conf_no: newConfNo },
+        },
+        true,
+        true
+      ).catch(() => {});
+      if (prevConfNo !== null && prevConfNo !== 0) {
+        this.#refreshMembership(prevConfNo);
+      }
+    }
+
+    // Sync reader state before mark-as-read so that any intermediate
+    // #setState (from #markTextAsReadLocally) preserves the correct
+    // currentConfNo in the snapshot.
+    this.#syncReaderState();
+
     if (result === null) {
       this.#log.info('advance() - null (all read)');
-      this.#syncReaderState();
       return null;
     }
 
@@ -1248,25 +1292,12 @@ export class LyskomClient {
     }
 
     this.#prefetchFromReader();
-    this.#syncReaderState();
     return result;
-  }
-
-  nextUnreadConference(): number | null {
-    if (!this.#reader) return null;
-    const confNo = this.#reader.nextUnreadConference();
-    if (confNo !== null) {
-      this.#log.info(`nextUnreadConference - found ${confNo}`);
-      this.enterConference(confNo).catch(() => {});
-    } else {
-      this.#log.info('nextUnreadConference - null (no unread conferences)');
-    }
-    return confNo;
   }
 
   async skipConference(): Promise<void> {
     if (!this.#reader) return;
-    const confNo = this.#reader.state.currentConfNo;
+    const confNo = this.#currentConferenceNo || null;
     this.#log.info(`skipConference(${confNo})...`);
     if (confNo === null) return;
 

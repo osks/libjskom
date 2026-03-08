@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Seed a LysKOM server with test data from a JSON fixture file.
 
-Drives httpkom-cli for all operations.
+Drives httpkom_cli.py for all operations.
 
 Usage:
     seed.py [--host HOST] [--port PORT] fixture.json
@@ -54,7 +54,7 @@ import sys
 def cli(host, port, endpoint, params=None, data=None, pers_name=None, passwd=None):
     """Call httpkom-cli and return parsed JSON output."""
     cmd = [
-        "httpkom-cli",
+        sys.executable, "-m", "httpkom.cli",
         "--host", host, "--port", str(port),
     ]
     if pers_name and passwd:

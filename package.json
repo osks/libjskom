@@ -9,8 +9,10 @@
     }
   },
   "types": "./dist/index.d.ts",
+  "files": ["dist"],
   "private": true,
   "scripts": {
+    "prepack": "tsc",
     "build": "tsc",
     "test:unit": "node --test test/unit/*.test.js",
     "test:e2e": "npm run build && npx vitest run --config e2e/vitest.config.ts",

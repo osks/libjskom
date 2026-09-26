@@ -60,3 +60,36 @@ export async function waitForReader(client: LyskomClient, timeoutMs = 5000) {
     return reader && !reader.advancing;
   }, timeoutMs);
 }
+
+export async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, what = "operation"): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} did not finish within ${timeoutMs}ms`)), timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer!);
+  }
+}
+
+// --- Fault injection (httpkom <-> lyskomd goes through toxiproxy) ---
+
+export const TOXIPROXY_URL = process.env.TOXIPROXY_URL || "http://localhost:8474";
+
+async function updateLyskomProxy(body: Record<string, unknown>) {
+  const res = await fetch(`${TOXIPROXY_URL}/proxies/lyskomd`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`toxiproxy update failed: ${res.status} ${await res.text()}`);
+}
+
+/**
+ * Close all open connections between httpkom and lyskomd, as when
+ * lyskomd kicks a client or restarts. New connections work right away.
+ */
+export async function dropLyskomConnections() {
+  await updateLyskomProxy({ enabled: false });
+  await updateLyskomProxy({ enabled: true });
+}

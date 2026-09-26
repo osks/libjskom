@@ -1,0 +1,50 @@
+import { describe, it, expect, afterEach } from "vitest";
+import {
+  createLoggedInClient,
+  dropLyskomConnections,
+  safeDisconnect,
+  waitForMemberships,
+  withTimeout,
+  TEST_USER,
+} from "./helpers";
+import { LyskomClient } from "../dist/index.js";
+
+// No retries: these tests are about timing, and a retry would hide
+// a request that only sometimes hangs.
+describe("connection loss", { retry: 0 }, () => {
+  let client: LyskomClient;
+
+  afterEach(async () => {
+    await safeDisconnect(client);
+  });
+
+  // Log in and wait until the requests started by login are done, so the
+  // connection is idle when it is dropped (like a phone that was asleep).
+  async function createIdleLoggedInClient() {
+    const c = await createLoggedInClient();
+    await waitForMemberships(c);
+    await new Promise((r) => setTimeout(r, 500));
+    return c;
+  }
+
+  it("should log out when lyskomd drops the connection", async () => {
+    client = await createIdleLoggedInClient();
+
+    await dropLyskomConnections();
+
+    await expect(
+      withTimeout(client.getMembershipUnreads(), 5000, "request after connection loss")
+    ).rejects.toMatchObject({ status: 403 });
+    expect(client.isLoggedIn()).toBe(false);
+  });
+
+  it("should be able to log in again after lyskomd dropped the connection", async () => {
+    client = await createIdleLoggedInClient();
+
+    await dropLyskomConnections();
+    await withTimeout(client.getMembershipUnreads(), 5000, "request after connection loss").catch(() => {});
+
+    await withTimeout(client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd }), 5000, "login");
+    expect(client.isLoggedIn()).toBe(true);
+  });
+});

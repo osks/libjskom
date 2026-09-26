@@ -202,4 +202,6 @@ export interface LyskomClientOptions {
   clientVersion?: string;
   cacheVersion?: number | null;
   cacheVersionKey?: string;
+  /** Abort requests that get no response within this time. Default 30000. */
+  requestTimeoutMs?: number;
 }

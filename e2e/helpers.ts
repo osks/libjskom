@@ -7,10 +7,11 @@ export const LYSKOM_SERVER_ID = "default";
 export const TEST_USER = { name: "Test User", passwd: "test123" };
 export const ANOTHER_USER = { name: "Another User", passwd: "test456" };
 
-export function createClient() {
+export function createClient(options: ConstructorParameters<typeof LyskomClient>[0] = {}) {
   return new LyskomClient({
     lyskomServerId: LYSKOM_SERVER_ID,
     httpkomServer: HTTPKOM_BASE_URL,
+    ...options,
   });
 }
 
@@ -92,4 +93,26 @@ async function updateLyskomProxy(body: Record<string, unknown>) {
 export async function dropLyskomConnections() {
   await updateLyskomProxy({ enabled: false });
   await updateLyskomProxy({ enabled: true });
+}
+
+/**
+ * Make the connection between httpkom and lyskomd a black hole: data is
+ * dropped but the connection stays open, as when a NAT or firewall
+ * silently drops it. Undo with clearLyskomToxics().
+ */
+export async function blackholeLyskom() {
+  for (const stream of ["upstream", "downstream"]) {
+    const res = await fetch(`${TOXIPROXY_URL}/proxies/lyskomd/toxics`, {
+      method: "POST",
+      body: JSON.stringify({ name: `blackhole-${stream}`, type: "timeout", stream, attributes: { timeout: 0 } }),
+    });
+    if (!res.ok) throw new Error(`toxiproxy add toxic failed: ${res.status} ${await res.text()}`);
+  }
+}
+
+export async function clearLyskomToxics() {
+  const res = await fetch(`${TOXIPROXY_URL}/proxies/lyskomd/toxics`);
+  for (const toxic of (await res.json()) as { name: string }[]) {
+    await fetch(`${TOXIPROXY_URL}/proxies/lyskomd/toxics/${toxic.name}`, { method: "DELETE" });
+  }
 }

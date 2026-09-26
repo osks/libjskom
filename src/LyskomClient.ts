@@ -45,6 +45,7 @@ interface HttpError {
   status: number;
   headers: Headers | null;
   config?: HttpConfig;
+  timedOut?: boolean;
 }
 
 interface PendingRequest {
@@ -84,6 +85,7 @@ export class LyskomClient {
   #clientVersion: string;
   #cacheVersion: number | null;
   #cacheVersionKey: string;
+  #requestTimeoutMs: number;
 
   // --- State management ---
   #state: Snapshot;
@@ -120,6 +122,7 @@ export class LyskomClient {
     this.#clientVersion = options.clientVersion ?? '0.2';
     this.#cacheVersion = options.cacheVersion !== undefined ? options.cacheVersion : 0;
     this.#cacheVersionKey = options.cacheVersionKey ?? '_v';
+    this.#requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
 
     // Initialize state from restored session if available
     if (this.#httpkomId && this.#session) {
@@ -238,6 +241,12 @@ export class LyskomClient {
 
     this.#addPendingRequest(controller, requireSession, requireLogin);
 
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.#requestTimeoutMs);
+
     try {
       const response = await fetch(config.url, fetchConfig);
 
@@ -269,6 +278,7 @@ export class LyskomClient {
       }
 
       this.#removePendingRequest(controller);
+      this.#connectionOk();
       return { data: payload, status: response.status, headers: response.headers };
     } catch (error: unknown) {
       if (!this.#hasPendingRequest(controller)) {
@@ -276,9 +286,23 @@ export class LyskomClient {
       }
       this.#removePendingRequest(controller);
 
+      if (timedOut) {
+        this.#log.warn(`#request - no response within ${this.#requestTimeoutMs}ms on ${config.url}`);
+        this.#connectionProblem();
+        throw { data: null, status: 0, headers: null, config, timedOut: true } as HttpError;
+      }
+
       const status = typeof error === 'object' && error !== null && 'status' in error
         ? (error as HttpError).status
         : undefined;
+
+      // No status means fetch itself failed (offline, DNS, connection
+      // refused). 502-504 come from a proxy that can't reach httpkom.
+      if (status === undefined || (status >= 502 && status <= 504)) {
+        this.#connectionProblem();
+      } else {
+        this.#connectionOk();
+      }
 
       if (status === 401) {
         this.#log.warn(`#request - 401 on ${config.url}, cancelling login-requiring requests and resetting person`);
@@ -302,6 +326,21 @@ export class LyskomClient {
         }
       }
       throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Track whether httpkom is reachable, based on how requests go.
+  #connectionProblem(): void {
+    if (this.isLoggedIn() && this.#state.connectionStatus === 'connected') {
+      this.#setState({ connectionStatus: 'reconnecting' });
+    }
+  }
+
+  #connectionOk(): void {
+    if (this.#state.connectionStatus === 'reconnecting') {
+      this.#setState({ connectionStatus: 'connected' });
     }
   }
 

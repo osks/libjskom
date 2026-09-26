@@ -1,5 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
+  blackholeLyskom,
+  clearLyskomToxics,
+  createClient,
   createLoggedInClient,
   dropLyskomConnections,
   safeDisconnect,
@@ -15,6 +18,7 @@ describe("connection loss", { retry: 0 }, () => {
   let client: LyskomClient;
 
   afterEach(async () => {
+    await clearLyskomToxics();
     await safeDisconnect(client);
   });
 
@@ -45,6 +49,21 @@ describe("connection loss", { retry: 0 }, () => {
     await withTimeout(client.getMembershipUnreads(), 5000, "request after connection loss").catch(() => {});
 
     await withTimeout(client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd }), 5000, "login");
+    expect(client.isLoggedIn()).toBe(true);
+  });
+
+  it("should time out and report reconnecting when requests get no response", async () => {
+    client = createClient({ requestTimeoutMs: 1000 });
+    await client.connect();
+    await client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd });
+    await waitForMemberships(client);
+
+    await blackholeLyskom();
+
+    await expect(
+      withTimeout(client.getMembershipUnreads(), 3000, "request to black hole")
+    ).rejects.toMatchObject({ timedOut: true });
+    expect(client.getSnapshot().connectionStatus).toBe("reconnecting");
     expect(client.isLoggedIn()).toBe(true);
   });
 });

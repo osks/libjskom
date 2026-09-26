@@ -161,6 +161,10 @@ export interface ReaderSnapshot {
   currentConfNo: number | null;
   readingList: ReadInfo[];
   allRead: boolean;
+  /** Whether advance() will show a text before moving to another conference. */
+  hasPendingText: boolean;
+  /** Conference that advance() moves to when no text is pending. */
+  nextConfNo: number | null;
   advancing: boolean;
 }
 

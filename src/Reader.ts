@@ -56,6 +56,21 @@ export class Reader {
     return null;
   }
 
+  /**
+   * Whether advance() will show a text from the reading list, rather than
+   * move on to another conference. Mirrors #doAdvance: REVIEW texts always
+   * count, other texts only if unread, and a CONF entry also counts if its
+   * membership has unread texts (found by polling).
+   */
+  hasPendingText(): boolean {
+    const memberships = this.#getMemberships();
+    return this.#readingList.some((ri) =>
+      ri.textList.some((textNo) => ri.type === 'REVIEW' || this.#isUnread(textNo)) ||
+      (ri.type === 'CONF' &&
+        (memberships.find((m) => m.conference.conf_no === ri.confNo)?.unread_texts.length ?? 0) > 0)
+    );
+  }
+
   skipConference(): void {
     if (this.#currentConfNo !== null) {
       this.#log.info(`skipConference(${this.#currentConfNo})`);
@@ -188,6 +203,8 @@ export class Reader {
         textList: [...ri.textList],
       })),
       allRead: this.#readingList.length === 0,
+      hasPendingText: this.hasPendingText(),
+      nextConfNo: this.nextUnreadConference(),
     };
   }
 

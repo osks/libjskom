@@ -214,6 +214,46 @@ describe("reader", () => {
     expect(result).toBeNull();
   });
 
+  it("should expose hasPendingText and nextConfNo", async () => {
+    const memberships = client.getSnapshot().memberships;
+    const testConfNo = memberships.find(
+      (m: any) => m.conference.name === "Test Conference"
+    ).conference.conf_no;
+
+    // Leave unread only in Reader Test and Test Conference
+    for (const m of memberships) {
+      const confNo = m.conference.conf_no;
+      if (confNo !== readerConfNo && confNo !== testConfNo) {
+        await client.setNumberOfUnreadTexts(confNo, 0);
+      }
+    }
+    await client.setNumberOfUnreadTexts(testConfNo, 100);
+
+    await client.enterConference(readerConfNo);
+    await waitForReader(client);
+    await waitForCondition(() => {
+      const reader = client.getSnapshot().reader;
+      return reader?.hasPendingText === true && reader.nextConfNo === testConfNo;
+    });
+
+    // Mark Reader Test's texts read. The reading list still holds them, but
+    // nothing is pending: the next advance() moves to Test Conference.
+    // Updated when memberships change, not only on reader actions.
+    const unreadTexts = client.getSnapshot().memberships.find(
+      (m: any) => m.conference.conf_no === readerConfNo
+    ).unread_texts;
+    for (const textNo of unreadTexts) {
+      await client.getText(textNo); // markAsRead updates memberships from cached texts
+      await client.markAsRead(textNo);
+    }
+    await waitForCondition(() => client.getSnapshot().reader?.hasPendingText === false);
+    expect(client.getSnapshot().reader.readingList.length).toBeGreaterThan(0);
+    expect(client.getSnapshot().reader.nextConfNo).toBe(testConfNo);
+
+    await client.setNumberOfUnreadTexts(testConfNo, 0);
+    await waitForCondition(() => client.getSnapshot().reader?.nextConfNo === null);
+  });
+
   it("should clear reader and set unread to 0 on skipConference", async () => {
     await client.enterConference(readerConfNo);
     await waitForReader(client);

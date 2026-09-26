@@ -156,6 +156,10 @@ export class LyskomClient {
 
   #setState(update: Partial<Snapshot>): void {
     this.#state = { ...this.#state, ...update };
+    // The reader snapshot (allRead, nextConfNo) depends on memberships
+    if ('memberships' in update && this.#reader) {
+      this.#state = { ...this.#state, reader: this.#readerSnapshot() };
+    }
     this.#emit();
   }
 
@@ -1206,16 +1210,18 @@ export class LyskomClient {
 
   #advancing = false;
 
+  #readerSnapshot(): Snapshot['reader'] {
+    return this.#reader
+      ? {
+          ...this.#reader.state,
+          currentConfNo: this.#currentConferenceNo || null,
+          advancing: this.#advancing,
+        }
+      : null;
+  }
+
   #syncReaderState(): void {
-    this.#setState({
-      reader: this.#reader
-        ? {
-            ...this.#reader.state,
-            currentConfNo: this.#currentConferenceNo || null,
-            advancing: this.#advancing,
-          }
-        : null,
-    });
+    this.#setState({ reader: this.#readerSnapshot() });
   }
 
   async enterConference(confNo: number): Promise<void> {

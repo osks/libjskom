@@ -32,6 +32,7 @@ plugins:
 
 nav:
   - Home: index.md
+  - LyskomClient: client.md
   - API Reference: api.md
 
 markdown_extensions:

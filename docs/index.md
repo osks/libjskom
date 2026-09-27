@@ -35,10 +35,22 @@ This generates API reference markdown from JSDoc and serves the docs locally.
 
 ## Tests
 
-End-to-end tests run against a real LysKOM server via Docker Compose:
+End-to-end tests run against a real LysKOM server and httpkom in Docker
+containers (started by [testcontainers](https://testcontainers.com)):
 
 ```sh
 npm run test:e2e
 ```
 
-This starts lyskom-server, seeds fixture data, starts httpkom, runs the tests, and tears everything down.
+httpkom reaches lyskomd through [Toxiproxy](https://github.com/Shopify/toxiproxy),
+so tests can break the connection between them: drop it
+(`dropLyskomConnections()` in `e2e/helpers.ts`) or make it silently dead
+(`blackholeLyskom()`). See `e2e/connection-loss.test.ts`.
+
+The httpkom image installs pylyskom and httpkom from GitHub at commits pinned
+in `e2e/httpkom/Dockerfile`. To test local, unreleased changes, point to your
+checkouts:
+
+```sh
+PYLYSKOM_SRC=../pylyskom HTTPKOM_SRC=../httpkom npm run test:e2e
+```

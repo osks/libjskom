@@ -27,7 +27,7 @@ npm install
 
 | Command | Description |
 |---------|-------------|
-| `npm run test:e2e` | Run e2e tests against a real LysKOM server via Docker Compose |
+| `npm run test:e2e` | Run e2e tests against a real LysKOM server and httpkom in Docker (see [docs/index.md](docs/index.md#tests)) |
 | `npm run docs:serve` | Serve API docs locally at `http://localhost:8000` |
 | `npm run docs:build` | Build static docs HTML into `site/` |
 | `npm run docs:api` | Regenerate `docs/api.md` from JSDoc annotations |

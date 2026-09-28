@@ -10,17 +10,31 @@ const TOXIPROXY_IMAGE = "ghcr.io/shopify/toxiproxy:2.12.0";
 
 let cleanupFn: (() => Promise<void>) | undefined;
 
-// Build context for the httpkom image: the Dockerfile plus src/ with
-// local checkouts of pylyskom/httpkom, if PYLYSKOM_SRC/HTTPKOM_SRC are set.
+// Where to take pylyskom/httpkom from: PYLYSKOM_SRC/HTTPKOM_SRC if set,
+// else a checkout next to libjskom (../pylyskom, ../httpkom) if there is
+// one, else the commits pinned in e2e/httpkom/Dockerfile. E2E_PINNED=1
+// forces the pins.
+function localSource(name: string, envVar: string): string | null {
+  if (process.env[envVar]) return path.resolve(process.env[envVar]!);
+  if (process.env.E2E_PINNED) return null;
+  const sibling = path.resolve(__dirname, "..", "..", name);
+  return fs.existsSync(path.join(sibling, "pyproject.toml")) ? sibling : null;
+}
+
+// Build context for the httpkom image: the Dockerfile plus src/ with the
+// local checkouts to install (see localSource).
 function httpkomBuildContext(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "libjskom-e2e-httpkom-"));
   fs.copyFileSync(path.join(__dirname, "httpkom", "Dockerfile"), path.join(dir, "Dockerfile"));
   fs.mkdirSync(path.join(dir, "src"));
 
   const skip = new Set([".git", ".tox", ".venv", "__pycache__", "node_modules", "dist", "build", "site"]);
-  for (const [name, src] of [["pylyskom", process.env.PYLYSKOM_SRC], ["httpkom", process.env.HTTPKOM_SRC]]) {
-    if (!src) continue;
-    const from = path.resolve(src);
+  for (const [name, envVar] of [["pylyskom", "PYLYSKOM_SRC"], ["httpkom", "HTTPKOM_SRC"]]) {
+    const from = localSource(name, envVar);
+    if (!from) {
+      console.log(`httpkom image: using pinned ${name} (e2e/httpkom/Dockerfile)`);
+      continue;
+    }
     console.log(`httpkom image: using local ${name} from ${from}`);
     fs.cpSync(from, path.join(dir, "src", name), {
       recursive: true,

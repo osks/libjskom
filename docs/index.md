@@ -47,10 +47,12 @@ so tests can break the connection between them: drop it
 (`dropLyskomConnections()` in `e2e/helpers.ts`) or make it silently dead
 (`blackholeLyskom()`). See `e2e/connection-loss.test.ts`.
 
-The httpkom image installs pylyskom and httpkom from GitHub at commits pinned
-in `e2e/httpkom/Dockerfile`. To test local, unreleased changes, point to your
-checkouts:
+The httpkom image uses your local checkouts of pylyskom and httpkom if they
+are next to libjskom (`../pylyskom`, `../httpkom`), uncommitted changes
+included. Otherwise it installs them from GitHub at the commits pinned in
+`e2e/httpkom/Dockerfile`. The test output says which it used.
 
 ```sh
-PYLYSKOM_SRC=../pylyskom HTTPKOM_SRC=../httpkom npm run test:e2e
+PYLYSKOM_SRC=/elsewhere/pylyskom npm run test:e2e   # a checkout somewhere else
+E2E_PINNED=1 npm run test:e2e                        # force the pinned commits
 ```

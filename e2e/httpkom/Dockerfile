@@ -10,8 +10,8 @@ RUN apt-get update \
 ARG PYLYSKOM_REF=840679e
 ARG HTTPKOM_REF=f4738ce
 
-# Local pylyskom/httpkom checkouts, copied in by global-setup.ts when
-# PYLYSKOM_SRC/HTTPKOM_SRC are set.
+# Local pylyskom/httpkom checkouts, copied in by global-setup.ts (by default
+# from next to libjskom; see localSource() there).
 COPY src/ /src/
 RUN pkgs="$(ls -d /src/*/ 2>/dev/null)"; \
     [ -d /src/pylyskom ] || pkgs="$pkgs pylyskom@https://github.com/osks/pylyskom/archive/${PYLYSKOM_REF}.tar.gz"; \

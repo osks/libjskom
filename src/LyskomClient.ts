@@ -102,6 +102,8 @@ export class LyskomClient {
 
   // --- Text cache ---
   #textCache = new LRUMap<number, KomText>(500);
+  // Texts whose fetch failed for connection reasons; refresh() retries them
+  #failedTexts = new Set<number>();
   #inFlight = new Map<number, Promise<KomText>>();
 
   // --- Reader ---
@@ -345,6 +347,8 @@ export class LyskomClient {
   #connectionOk(): void {
     if (this.#state.connectionStatus === 'reconnecting') {
       this.#setState({ connectionStatus: 'connected' });
+      // Fetch again what failed while the connection was down
+      queueMicrotask(() => this.refresh());
     }
   }
 
@@ -609,6 +613,7 @@ export class LyskomClient {
     }
     this.#membershipInitPromise = null;
     this.#textCache.clear();
+    this.#failedTexts.clear();
     this.#inFlight.clear();
     this.#reader = null;
     this.#setState({
@@ -621,6 +626,27 @@ export class LyskomClient {
       marks: [],
     });
     this.#log.info('logout - success');
+  }
+
+  /**
+   * Fetch again what failed: memberships if they never loaded (otherwise the
+   * unread counts, which also restarts the poll's backoff), marks, and texts
+   * whose fetch failed for connection reasons. Called automatically when the
+   * connection comes back; apps can also call it, e.g. when returning to the
+   * foreground or when the browser is back online.
+   */
+  refresh(): void {
+    if (!this.isLoggedIn()) return;
+    this.#log.info(`refresh - ${this.#failedTexts.size} failed texts`);
+    if (this.#membershipInitPromise) {
+      this.#refreshUnreads(this.#pollIntervalMs).catch(() => {});
+    } else {
+      this.#fetchMemberships();
+    }
+    this.getMarks().catch(() => {});
+    for (const textNo of [...this.#failedTexts]) {
+      this.getText(textNo).catch(() => {});
+    }
   }
 
   /** Re-fetch memberships, marks, and restart polling after restoring from a serialized session. */
@@ -1108,9 +1134,16 @@ export class LyskomClient {
     try {
       const text = await promise;
       this.#log.debug(`getText(${textNo}) - fetched`);
+      this.#failedTexts.delete(textNo);
       return text;
     } catch (error) {
       this.#log.warn(`getText(${textNo}) - error`);
+      // Retry later only if the connection was the problem (not e.g. a
+      // deleted text, or a request cancelled because the session is gone)
+      const e = error as Partial<HttpError>;
+      if (e.timedOut || e.status === undefined || e.status >= 500) {
+        this.#failedTexts.add(textNo);
+      }
       throw error;
     } finally {
       this.#inFlight.delete(textNo);

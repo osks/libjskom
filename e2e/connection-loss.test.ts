@@ -1,6 +1,8 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   blackholeLyskom,
+  slowLyskom,
+  waitForCondition,
   clearLyskomToxics,
   createClient,
   createLoggedInClient,
@@ -87,4 +89,75 @@ describe("connection loss", { retry: 0 }, () => {
     expect(Date.now() - start).toBeLessThan(1000);
     expect(client.isLoggedIn()).toBe(false);
   }, 20000);
+
+  it("should fetch again what failed when the connection comes back", async () => {
+    // A session to restore, as after a page reload
+    const first = await createLoggedInClient();
+    await waitForMemberships(first);
+    const textNo = first.getSnapshot().memberships.flatMap((m: any) => m.unread_texts)[0];
+    expect(textNo).toBeTruthy();
+    const saved = first.toObject();
+
+    // Slow enough that the restored client's requests time out (1s), but not
+    // so slow that httpkom's keepalive (2s timeout) drops the session
+    await slowLyskom(1500);
+    client = createClient({ ...saved, requestTimeoutMs: 1000 });
+    client.resume();
+    await client.getText(textNo).catch(() => {});
+    await waitForCondition(() => client.getSnapshot().connectionStatus === "reconnecting");
+    expect(client.getSnapshot().memberships).toEqual([]);
+    expect(client.getSnapshot().texts.has(textNo)).toBe(false);
+
+    // The next answer from httpkom brings the connection back, and what
+    // failed is fetched again without the app asking
+    await clearLyskomToxics();
+    await client.getMembershipUnreads().catch(() => {});
+    await waitForCondition(() => {
+      const snap = client.getSnapshot();
+      return snap.connectionStatus === "connected" && snap.memberships.length > 0 && snap.texts.has(textNo);
+    }, 8000);
+  }, 20000);
+
+  it("should fetch again what failed, including marks, when refresh() is called", async () => {
+    const first = await createLoggedInClient();
+    await waitForMemberships(first);
+    const textNo = first.getSnapshot().memberships.flatMap((m: any) => m.unread_texts)[0];
+    await first.createMark(textNo, 100);
+    const saved = first.toObject();
+
+    await slowLyskom(1500);
+    client = createClient({ ...saved, requestTimeoutMs: 1000 });
+    client.resume();
+    await waitForCondition(() => client.getSnapshot().connectionStatus === "reconnecting");
+    expect(client.getSnapshot().memberships).toEqual([]);
+    expect(client.getSnapshot().marks).toEqual([]);
+
+    // No other request is made: refresh() alone (as when the app returns to
+    // the foreground) must fetch it all
+    await clearLyskomToxics();
+    client.refresh();
+    await waitForCondition(() => {
+      const snap = client.getSnapshot();
+      return snap.connectionStatus === "connected" && snap.memberships.length > 0 &&
+        snap.marks.some((m: any) => m.text_no === textNo);
+    }, 8000);
+
+    await first.deleteMark(textNo);
+  }, 20000);
+
+  it("should not retry texts that don't exist", async () => {
+    client = await createLoggedInClient();
+    await waitForMemberships(client);
+    const missing = 999999999;
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    try {
+      await expect(client.getText(missing)).rejects.toMatchObject({ status: 404 });
+      client.refresh();
+      await new Promise((r) => setTimeout(r, 1000));
+      const calls = fetchSpy.mock.calls.filter(([url]) => String(url).includes(`/texts/${missing}`));
+      expect(calls).toHaveLength(1);
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
 });

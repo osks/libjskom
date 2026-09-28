@@ -116,3 +116,16 @@ export async function clearLyskomToxics() {
     await fetch(`${TOXIPROXY_URL}/proxies/lyskomd/toxics/${toxic.name}`, { method: "DELETE" });
   }
 }
+
+/**
+ * Delay all data from httpkom to lyskomd by `ms`, so requests to httpkom
+ * answer slowly without the connection being lost. Undo with
+ * clearLyskomToxics().
+ */
+export async function slowLyskom(ms: number) {
+  const res = await fetch(`${TOXIPROXY_URL}/proxies/lyskomd/toxics`, {
+    method: "POST",
+    body: JSON.stringify({ name: "slow", type: "latency", stream: "upstream", attributes: { latency: ms } }),
+  });
+  if (!res.ok) throw new Error(`toxiproxy add toxic failed: ${res.status} ${await res.text()}`);
+}

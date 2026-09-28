@@ -80,6 +80,11 @@ export async function setup() {
     .withCopyContentToContainer([
       { content: httpkomCfg, target: "/etc/httpkom.cfg" },
     ])
+    // Short keepalive so tests can see it detect a dead LysKOM connection
+    .withCommand([
+      "python3", "-m", "httpkom", "--config", "/etc/httpkom.cfg", "--host", "0.0.0.0", "--port", "5001",
+      "--keepalive-interval", "2", "--keepalive-timeout", "2",
+    ])
     .withWaitStrategy(Wait.forListeningPorts())
     .withStartupTimeout(30_000)
     .start();

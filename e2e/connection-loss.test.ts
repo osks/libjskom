@@ -66,4 +66,25 @@ describe("connection loss", { retry: 0 }, () => {
     expect(client.getSnapshot().connectionStatus).toBe("reconnecting");
     expect(client.isLoggedIn()).toBe(true);
   });
+
+  it("should log out quickly when httpkom's keepalive finds the LysKOM connection dead", async () => {
+    client = createClient({ requestTimeoutMs: 10000 });
+    await client.connect();
+    await client.login({ name: TEST_USER.name, passwd: TEST_USER.passwd });
+    await waitForMemberships(client);
+    await new Promise((r) => setTimeout(r, 500));
+
+    await blackholeLyskom();
+    // httpkom pings every 2s and gives up after 2s without a reply
+    await new Promise((r) => setTimeout(r, 7000));
+
+    // The session is gone, so httpkom answers at once instead of the
+    // request hanging on the dead connection
+    const start = Date.now();
+    await expect(
+      withTimeout(client.getMembershipUnreads(), 3000, "request after keepalive")
+    ).rejects.toMatchObject({ status: 403 });
+    expect(Date.now() - start).toBeLessThan(1000);
+    expect(client.isLoggedIn()).toBe(false);
+  }, 20000);
 });

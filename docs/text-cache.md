@@ -173,8 +173,22 @@ At worst a stat is stale until the next revalidation, never permanently.
 - Capped, e.g. the last few hundred texts (least recently used out).
 - **Cleared on logout** (texts are stored on the device, not just in memory;
   matters on a shared computer). jskom2 already clears the buffer on login.
-- Bodies and stats could be stored separately, since they have different
-  lifetimes.
+- **Two stores**, for bodies and for stats (two object stores in the same
+  IndexedDB database), because they behave differently:
+
+  | | Bodies (subject, body, content type) | Stats |
+  | --- | --- | --- |
+  | Changes | never | comments, recipients, aux items, marks, deletion |
+  | Freshness | stored once, never revalidated | fetched-at time per stat, revalidated when too old |
+  | Fetched with | `GET /texts/{no}` | `POST /textstats`, many at once |
+  | Size | large | small |
+  | Limit | e.g. 1000 (as the buffer), least recently used out | can be much larger |
+
+  Revalidation only touches stats; and stats are needed for more texts than
+  bodies are (the stream shows "↳ #19 by …" for comments not read yet, which
+  needs their stat but not their body). The elisp client also keeps them
+  apart (`lyskom-text-cache` and `lyskom-text-mass-cache`).
+  `snapshot.texts` still gives apps complete texts (stat and body).
 
 libjskom would get a small storage interface (get/put/delete/clear), so the
 library isn't tied to IndexedDB; jskom2 provides the IndexedDB implementation.
@@ -297,11 +311,12 @@ looked at with the debug panel's Copy.
 
 ## Open questions
 
-- Stored stats: show them at once and revalidate in the background (as
-  proposed), or treat them as stale until revalidated? The elisp client never
-  has to decide this, since its cache dies with the session.
-- Cache size: how many texts, and should bodies and stats have separate
-  limits?
+- Stored stats: proposed to show them at once and revalidate in the
+  background (the connection indicator tells when the connection doesn't
+  work), rather than treat them as stale until revalidated. The elisp client
+  never has to decide this, since its cache dies with the session.
+- Cache size: proposed 1000 bodies (as the buffer); stats can be kept much
+  longer.
 - Deleted texts: remove from the cache, or keep a "deleted" marker so the
   buffer can show it?
 - Should the texts' authors and recipients (persons, conferences) be cached

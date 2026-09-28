@@ -603,6 +603,10 @@ export class LyskomClient {
   async logout(): Promise<void> {
     this.#log.info('logout()...');
     this.#stopPolling();
+    // Cancel what's still in flight (e.g. fetches started by login): once
+    // the server has logged out, they would get 401, and the 401 handling
+    // cancels every pending request, this logout included
+    this.#cancelAllPendingRequestsRequiringLogin();
     await this.#http(
       { method: 'post', url: '/sessions/current/logout' },
       true,

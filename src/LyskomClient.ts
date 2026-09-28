@@ -728,8 +728,13 @@ export class LyskomClient {
     };
   }
 
-  static fromObject(obj: ClientObject & { httpkomServer?: string }): LyskomClient {
+  // Options are the ones that aren't saved, e.g. textStore
+  static fromObject(
+    obj: ClientObject & { httpkomServer?: string },
+    options: LyskomClientOptions = {}
+  ): LyskomClient {
     return new LyskomClient({
+      ...options,
       id: obj.id,
       lyskomServerId: obj.lyskomServerId,
       httpkomId: obj.httpkomId,

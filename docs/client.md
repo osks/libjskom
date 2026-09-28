@@ -26,7 +26,7 @@ await client.login({ name: 'Oskar Nyström', passwd: 'secret' });
 | `textStore` | | Persistent text cache, see [Text cache](#text-cache) |
 | `httpkomConnectionHeader` | `'Httpkom-Connection'` | Header carrying the session id |
 | `cacheVersion`, `cacheVersionKey` | `0`, `'_v'` | Query parameter added to requests, for cache busting |
-| `id`, `httpkomId`, `session` | | For restoring a saved client; use `LyskomClient.fromObject()` |
+| `id`, `httpkomId`, `session` | | For restoring a saved client; use `LyskomClient.fromObject(saved, options)`, where `options` are the ones that aren't saved (e.g. `textStore`) |
 
 ## Snapshot
 

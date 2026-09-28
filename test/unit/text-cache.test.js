@@ -82,6 +82,18 @@ describe('text cache', () => {
     assert.deepEqual(calls, []);
   });
 
+  it('fromObject() takes a textStore', async () => {
+    const store = new MemoryTextStore();
+    await newClient(store).getText(1);
+    calls = [];
+    const restored = LyskomClient.fromObject(
+      { id: 'x', lyskomServerId: 's', httpkomId: 'conn-1', session: { session_no: 1, person: { pers_no: 1, pers_name: 'P' } }, httpkomServer: 'http://httpkom' },
+      { textStore: store },
+    );
+    assert.equal(await restored.loadStoredTexts([1]), 1);
+    assert.deepEqual(calls, []);
+  });
+
   it('loadStoredTexts() fills snapshot.texts without requests', async () => {
     const store = new MemoryTextStore();
     const first = newClient(store);

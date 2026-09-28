@@ -120,11 +120,13 @@ describe("reader", () => {
     await client.enterConference(readerConfNo);
     await waitForReader(client);
 
-    // Collect all text subjects in reader order
+    // Collect all text subjects in reader order, in this conference only:
+    // other tests may have left unread texts in other conferences, which
+    // advance() would move on to
     const subjects: string[] = [];
-    let result;
-    while ((result = await client.advance()) !== null) {
-      const text = await client.getText(result.textNo);
+    while (client.getSnapshot().reader.hasPendingText) {
+      const result = await client.advance();
+      const text = await client.getText(result!.textNo);
       subjects.push(text.subject);
     }
 

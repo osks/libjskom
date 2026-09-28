@@ -38,10 +38,11 @@ describe("texts", () => {
   it("should create a new text and fetch it back", async () => {
     client = await createLoggedInClient();
 
-    // Get a conference to post in
+    // Post in Test Conference, not in Reader Test, whose texts the reader
+    // tests expect to be exactly the seeded ones
     const memberships = await client.getMemberships();
     const confNo = memberships.memberships.find(
-      (m: any) => !m.conference.type.letterbox
+      (m: any) => m.conference.name === "Test Conference"
     ).conference.conf_no;
 
     const result = await client.createText({

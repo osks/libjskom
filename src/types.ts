@@ -85,6 +85,38 @@ export interface KomText {
   aux_items: AuxItem[];
 }
 
+/** A text's metadata: everything but subject, body and content type. Can change. */
+export type KomTextStat = Omit<KomText, 'subject' | 'body' | 'content_type'>;
+
+/** A text's contents. Never changes once the text is created. */
+export interface KomTextBody {
+  subject: string;
+  body: string;
+  content_type: string;
+}
+
+/** A text stat as stored in a TextStore, with when it was fetched. */
+export interface StoredTextStat {
+  stat: KomTextStat;
+  /** Milliseconds since the epoch */
+  fetchedAt: number;
+}
+
+/**
+ * Persistent storage for the text cache, e.g. IndexedDB in a browser.
+ * Bodies and stats are separate: bodies never change, stats do. Which
+ * server and person the texts belong to is up to the implementation (one
+ * store per server and person). Limits and eviction too.
+ */
+export interface TextStore {
+  getBodies(textNos: number[]): Promise<Map<number, KomTextBody>>;
+  getStats(textNos: number[]): Promise<Map<number, StoredTextStat>>;
+  putBody(textNo: number, body: KomTextBody): Promise<void>;
+  putStat(textNo: number, stat: StoredTextStat): Promise<void>;
+  delete(textNo: number): Promise<void>;
+  clear(): Promise<void>;
+}
+
 export interface MICommentRef {
   type: 'comment' | 'footnote';
   text_no: number;
@@ -208,4 +240,6 @@ export interface LyskomClientOptions {
   cacheVersionKey?: string;
   /** Abort requests that get no response within this time. Default 30000. */
   requestTimeoutMs?: number;
+  /** Persistent text cache; without it, texts are only cached in memory. */
+  textStore?: TextStore;
 }

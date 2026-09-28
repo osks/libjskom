@@ -9,6 +9,9 @@ import type {
   Membership,
   MembershipUnread,
   KomText,
+  KomTextStat,
+  KomTextBody,
+  TextStore,
   KomMark,
   AdvanceResult,
   ClientObject,
@@ -18,6 +21,20 @@ import type {
 } from './types.js';
 
 // --- Helpers ---
+
+function splitText(text: KomText): { body: KomTextBody; stat: KomTextStat } {
+  const { subject, body, content_type, ...stat } = text;
+  return { body: { subject, body, content_type }, stat };
+}
+
+// JSON with sorted keys, to compare stats regardless of key order
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, v) =>
+    v && typeof v === 'object' && !Array.isArray(v)
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]))
+      : v
+  );
+}
 
 let idCounter = 0;
 function newId(): string {
@@ -104,6 +121,9 @@ export class LyskomClient {
   #textCache = new LRUMap<number, KomText>(500);
   // Texts whose fetch failed for connection reasons; refresh() retries them
   #failedTexts = new Set<number>();
+  // Persistent text cache (optional), and when each cached stat was fetched
+  #textStore: TextStore | null = null;
+  #statFetchedAt = new Map<number, number>();
   #inFlight = new Map<number, Promise<KomText>>();
 
   // --- Reader ---
@@ -125,6 +145,7 @@ export class LyskomClient {
     this.#cacheVersion = options.cacheVersion !== undefined ? options.cacheVersion : 0;
     this.#cacheVersionKey = options.cacheVersionKey ?? '_v';
     this.#requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
+    this.#textStore = options.textStore ?? null;
 
     // Initialize state from restored session if available
     if (this.#httpkomId && this.#session) {
@@ -617,6 +638,8 @@ export class LyskomClient {
     }
     this.#membershipInitPromise = null;
     this.#textCache.clear();
+    this.#statFetchedAt.clear();
+    await this.#textStore?.clear().catch(() => {});
     this.#failedTexts.clear();
     this.#inFlight.clear();
     this.#reader = null;
@@ -1133,7 +1156,7 @@ export class LyskomClient {
     if (existing) return existing;
 
     this.#log.debug(`getText(${textNo}) - fetching`);
-    const promise = this.#fetchText(textNo);
+    const promise = this.#loadText(textNo);
     this.#inFlight.set(textNo, promise);
     try {
       const text = await promise;
@@ -1154,6 +1177,29 @@ export class LyskomClient {
     }
   }
 
+  // From the text store if it has both body and stat, else from httpkom
+  async #loadText(textNo: number): Promise<KomText> {
+    if (this.#textStore) {
+      try {
+        const [bodies, stats] = await Promise.all([
+          this.#textStore.getBodies([textNo]),
+          this.#textStore.getStats([textNo]),
+        ]);
+        const body = bodies.get(textNo);
+        const stored = stats.get(textNo);
+        if (body && stored) {
+          const text = { ...stored.stat, ...body } as KomText;
+          this.#cacheText(text, stored.fetchedAt);
+          this.#setState({ texts: this.#textCache.toMap() });
+          return text;
+        }
+      } catch (error) {
+        this.#log.warn(`getText(${textNo}) - text store failed: ${error}`);
+      }
+    }
+    return this.#fetchText(textNo);
+  }
+
   async #fetchText(textNo: number): Promise<KomText> {
     const response = await this.#http(
       { method: 'get', url: `/texts/${textNo}` },
@@ -1161,9 +1207,129 @@ export class LyskomClient {
       true
     );
     const text = response.data as KomText;
-    this.#textCache.set(textNo, text);
+    const now = Date.now();
+    this.#cacheText(text, now);
     this.#setState({ texts: this.#textCache.toMap() });
+    if (this.#textStore) {
+      const { body, stat } = splitText(text);
+      await Promise.all([
+        this.#textStore.putBody(textNo, body),
+        this.#textStore.putStat(textNo, { stat, fetchedAt: now }),
+      ]).catch((error) => this.#log.warn(`getText(${textNo}) - storing failed: ${error}`));
+    }
     return text;
+  }
+
+  #cacheText(text: KomText, statFetchedAt: number): void {
+    this.#textCache.set(text.text_no, text);
+    this.#statFetchedAt.set(text.text_no, statFetchedAt);
+  }
+
+  #uncacheText(textNo: number): void {
+    this.#textCache.delete(textNo);
+    this.#statFetchedAt.delete(textNo);
+    this.#textStore?.delete(textNo).catch(() => {});
+  }
+
+  /**
+   * Load texts from the text store into the snapshot, without any request
+   * (e.g. on startup, so the reading history shows at once). Returns how
+   * many were loaded. Their stats may be old; see revalidateTexts().
+   */
+  async loadStoredTexts(textNos: number[]): Promise<number> {
+    if (!this.#textStore) return 0;
+    const missing = textNos.filter((no) => !this.#textCache.has(no));
+    if (missing.length === 0) return 0;
+    const [bodies, stats] = await Promise.all([
+      this.#textStore.getBodies(missing),
+      this.#textStore.getStats(missing),
+    ]);
+    let loaded = 0;
+    for (const textNo of missing) {
+      const body = bodies.get(textNo);
+      const stored = stats.get(textNo);
+      if (body && stored && !this.#textCache.has(textNo)) {
+        this.#cacheText({ ...stored.stat, ...body } as KomText, stored.fetchedAt);
+        loaded++;
+      }
+    }
+    if (loaded > 0) this.#setState({ texts: this.#textCache.toMap() });
+    return loaded;
+  }
+
+  // Fresh stats from httpkom, at most 100 per request; null for texts that
+  // no longer exist
+  async #fetchStats(textNos: number[]): Promise<Map<number, KomTextStat | null>> {
+    const result = new Map<number, KomTextStat | null>();
+    for (let i = 0; i < textNos.length; i += 100) {
+      const chunk = textNos.slice(i, i + 100);
+      const response = await this.#http(
+        { method: 'post', url: '/textstats', data: { text_nos: chunk } },
+        true,
+        true
+      );
+      const stats = (response.data as { text_stats: Record<string, KomTextStat | null> }).text_stats;
+      for (const textNo of chunk) result.set(textNo, stats[String(textNo)] ?? null);
+    }
+    return result;
+  }
+
+  /**
+   * Fetch fresh stats for those of `textNos` in the cache whose stats were
+   * fetched more than `maxAgeMs` ago, in as few requests as possible, and
+   * update the snapshot and the text store. Bodies are never refetched
+   * (they don't change). Texts that no longer exist are removed.
+   */
+  async revalidateTexts(textNos: number[], maxAgeMs = 0): Promise<{ checked: number; changed: number; removed: number }> {
+    const now = Date.now();
+    const due = [...new Set(textNos)].filter(
+      (no) => this.#textCache.has(no) && now - (this.#statFetchedAt.get(no) ?? 0) >= maxAgeMs
+    );
+    const result = { checked: due.length, changed: 0, removed: 0 };
+    if (due.length === 0) return result;
+
+    const stats = await this.#fetchStats(due);
+    const fetchedAt = Date.now();
+    for (const [textNo, stat] of stats) {
+      const old = this.#textCache.get(textNo);
+      if (!old) continue; // removed meanwhile (e.g. logout)
+      if (stat === null) {
+        this.#uncacheText(textNo);
+        result.removed++;
+        continue;
+      }
+      if (stableJson(splitText(old).stat) !== stableJson(stat)) result.changed++;
+      this.#cacheText({ ...old, ...stat }, fetchedAt);
+      this.#textStore?.putStat(textNo, { stat, fetchedAt }).catch(() => {});
+    }
+    this.#setState({ texts: this.#textCache.toMap() });
+    this.#log.debug(`revalidateTexts - ${JSON.stringify(result)}`);
+    return result;
+  }
+
+  /**
+   * Compare every cached text's stat with the server, without changing
+   * anything. Returns the texts that differ and in which fields ('deleted'
+   * if the text no longer exists). Empty means the cache is consistent.
+   */
+  async verifyCache(): Promise<Array<{ textNo: number; fields: string[] }>> {
+    const textNos = [...this.#textCache.toMap().keys()].sort((a, b) => a - b);
+    const stats = await this.#fetchStats(textNos);
+    const differences: Array<{ textNo: number; fields: string[] }> = [];
+    for (const textNo of textNos) {
+      const fresh = stats.get(textNo);
+      const cached = this.#textCache.get(textNo);
+      if (!cached) continue;
+      if (fresh === null || fresh === undefined) {
+        differences.push({ textNo, fields: ['deleted'] });
+        continue;
+      }
+      const old = splitText(cached).stat as Record<string, unknown>;
+      const keys = [...new Set([...Object.keys(old), ...Object.keys(fresh)])].sort();
+      const fields = keys.filter((k) => stableJson(old[k]) !== stableJson((fresh as Record<string, unknown>)[k]));
+      if (fields.length > 0) differences.push({ textNo, fields });
+    }
+    return differences;
   }
 
   async createText(params: {
@@ -1237,7 +1403,7 @@ export class LyskomClient {
 
   invalidateText(textNo: number): void {
     if (!this.#textCache.has(textNo)) return;
-    this.#textCache.delete(textNo);
+    this.#uncacheText(textNo);
     this.#setState({ texts: this.#textCache.toMap() });
   }
 

@@ -129,3 +129,18 @@ export async function slowLyskom(ms: number) {
   });
   if (!res.ok) throw new Error(`toxiproxy add toxic failed: ${res.status} ${await res.text()}`);
 }
+
+/**
+ * An unread text for `client`'s user, making one unread if needed (other
+ * test files may have marked everything read).
+ */
+export async function someUnreadTextNo(client: LyskomClient): Promise<number> {
+  const unread = () => client.getSnapshot().memberships.flatMap((m: any) => m.unread_texts)[0];
+  if (!unread()) {
+    const confNo = client.getSnapshot().memberships.find((m: any) => !m.conference.type?.letterbox)?.conference.conf_no;
+    if (!confNo) throw new Error("no conference to make texts unread in");
+    await client.setNumberOfUnreadTexts(confNo, 100);
+    await waitForCondition(() => unread());
+  }
+  return unread();
+}

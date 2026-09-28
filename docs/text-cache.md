@@ -1,6 +1,8 @@
 # Text cache: problem and ideas
 
-Status: design notes, nothing implemented yet.
+Status: the persistent cache and revalidation are implemented in libjskom
+(`textStore`, `loadStoredTexts`, `revalidateTexts`, `verifyCache`; see
+[client.md](client.md#text-cache)). The rest are design notes.
 
 ## The problem
 
@@ -309,15 +311,18 @@ looked at with the debug panel's Copy.
 3. Async messages pushed from httpkom (SSE, in httpkom and libjskom).
    Largest step; also gives live updates.
 
+## Decided
+
+- Stored stats are shown at once and revalidated in the background (the
+  connection indicator tells when the connection doesn't work), rather than
+  treated as stale until revalidated. The elisp client never has to decide
+  this, since its cache dies with the session.
+- Visible texts are revalidated when their stats are older than two minutes.
+- Cache size: 1000 bodies (as the buffer); stats are kept without a limit.
+- Deleted texts are removed from the cache.
+- Memberships are cached later, as a separate step.
+
 ## Open questions
 
-- Stored stats: proposed to show them at once and revalidate in the
-  background (the connection indicator tells when the connection doesn't
-  work), rather than treat them as stale until revalidated. The elisp client
-  never has to decide this, since its cache dies with the session.
-- Cache size: proposed 1000 bodies (as the buffer); stats can be kept much
-  longer.
-- Deleted texts: remove from the cache, or keep a "deleted" marker so the
-  buffer can show it?
 - Should the texts' authors and recipients (persons, conferences) be cached
   too? Their names are needed to render a text.

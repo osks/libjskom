@@ -23,6 +23,7 @@ await client.login({ name: 'Oskar Nyström', passwd: 'secret' });
 | `lyskomServerId` | `''` | Server id in httpkom's config; can also be given to `connect()` |
 | `clientName`, `clientVersion` | `'libjskom'`, `'0.2'` | Reported to the LysKOM server |
 | `requestTimeoutMs` | `30000` | Abort requests that get no response within this time |
+| `textStore` | | Persistent text cache, see [Text cache](#text-cache) |
 | `httpkomConnectionHeader` | `'Httpkom-Connection'` | Header carrying the session id |
 | `cacheVersion`, `cacheVersionKey` | `0`, `'_v'` | Query parameter added to requests, for cache busting |
 | `id`, `httpkomId`, `session` | | For restoring a saved client; use `LyskomClient.fromObject()` |
@@ -77,3 +78,41 @@ So what the next `advance()` will do is:
 
 The reader snapshot is recomputed whenever memberships change (polling,
 set-unread, join, leave), not only on reader actions.
+
+## Text cache
+
+Texts are cached in `snapshot.texts` for as long as the client lives. With a
+`textStore` they are also kept across restarts (the design is in
+[text-cache.md](text-cache.md)). A store holds bodies (subject, body, content
+type: never change) and stats (everything else, with when they were fetched)
+separately:
+
+```ts
+interface TextStore {
+  getBodies(textNos: number[]): Promise<Map<number, KomTextBody>>;
+  getStats(textNos: number[]): Promise<Map<number, StoredTextStat>>;
+  putBody(textNo: number, body: KomTextBody): Promise<void>;
+  putStat(textNo: number, stat: StoredTextStat): Promise<void>;
+  delete(textNo: number): Promise<void>;
+  clear(): Promise<void>;
+}
+```
+
+`MemoryTextStore` (in memory, at most `maxBodies` bodies, default 1000, least
+recently used dropped) is included, for tests and as a reference; an app
+provides its own persistent one (e.g. IndexedDB), one per person and server.
+
+- `getText(no)` uses the store before asking httpkom, and stores what it
+  fetches.
+- `loadStoredTexts(textNos)`: puts the stored texts into `snapshot.texts`
+  without any requests, so they can be shown at once on startup. Returns how
+  many were found.
+- `revalidateTexts(textNos, maxAgeMs = 0)`: fetches fresh stats (`POST
+  /textstats`, 100 texts per request) for the given cached texts whose stats
+  are older than `maxAgeMs`. Bodies are never refetched. Deleted texts are
+  removed. Returns `{ checked, changed, removed }`.
+- `verifyCache()`: compares every cached text's stat with the server's,
+  without changing anything, and returns the differences as `[{ textNo,
+  fields }]` (`fields: ['deleted']` for deleted texts). For tests and
+  debugging.
+- `logout()` clears the store.

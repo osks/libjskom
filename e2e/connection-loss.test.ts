@@ -3,6 +3,7 @@ import {
   blackholeLyskom,
   slowLyskom,
   waitForCondition,
+  someUnreadTextNo,
   clearLyskomToxics,
   createClient,
   createLoggedInClient,
@@ -94,8 +95,7 @@ describe("connection loss", { retry: 0 }, () => {
     // A session to restore, as after a page reload
     const first = await createLoggedInClient();
     await waitForMemberships(first);
-    const textNo = first.getSnapshot().memberships.flatMap((m: any) => m.unread_texts)[0];
-    expect(textNo).toBeTruthy();
+    const textNo = await someUnreadTextNo(first);
     const saved = first.toObject();
 
     // Slow enough that the restored client's requests time out (1s), but not
@@ -121,7 +121,7 @@ describe("connection loss", { retry: 0 }, () => {
   it("should fetch again what failed, including marks, when refresh() is called", async () => {
     const first = await createLoggedInClient();
     await waitForMemberships(first);
-    const textNo = first.getSnapshot().memberships.flatMap((m: any) => m.unread_texts)[0];
+    const textNo = await someUnreadTextNo(first);
     await first.createMark(textNo, 100);
     const saved = first.toObject();
 
